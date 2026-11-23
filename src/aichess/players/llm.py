@@ -1,6 +1,7 @@
 """LLM player (Anthropic/Claude). Stateless prompts: full position every turn."""
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Optional
 
@@ -80,6 +81,8 @@ class LLMPlayer(Player):
         self.system_prompt = system_prompt
         self.name = name or model
         self._client = client
+        if client is None:
+            self.client  # fail fast (missing key / package) instead of forfeiting mid-game
 
     @property
     def client(self) -> Any:
@@ -88,6 +91,8 @@ class LLMPlayer(Player):
             import anthropic
 
             load_dotenv()
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise RuntimeError("ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.")
             self._client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
         return self._client
 

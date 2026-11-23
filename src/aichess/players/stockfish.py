@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from typing import Optional
 
@@ -22,6 +23,8 @@ class StockfishPlayer(Player):
         threads: int = 1,
     ) -> None:
         exe = path or shutil.which("stockfish")
+        if exe and path and not (os.path.isfile(path) and os.access(path, os.X_OK)):
+            raise FileNotFoundError(f"Stockfish binary not found or not executable: {path}")
         if not exe:
             raise FileNotFoundError(
                 "Stockfish not found. Install it (e.g. `brew install stockfish`) or set `path`."
