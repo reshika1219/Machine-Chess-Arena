@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import chess
+import chess.engine
 import chess.pgn
 
 from .config import GameConfig, MatchConfig, OutputConfig, load_game_config, parse_player_spec
@@ -80,6 +81,26 @@ def _cmd_tournament(a: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_analyze(a: argparse.Namespace) -> int:
+    import shutil
+
+    from .analysis import analyse_game, format_report
+
+    exe = a.engine or shutil.which("stockfish")
+    if not exe:
+        print("error: Stockfish not found. Install it (`brew install stockfish`) or pass --engine.", file=sys.stderr)
+        return 1
+    with open(a.pgn) as f:
+        game = chess.pgn.read_game(f)
+    if game is None:
+        print("error: no game found in PGN", file=sys.stderr)
+        return 1
+    with chess.engine.SimpleEngine.popen_uci(exe) as eng:
+        rep = analyse_game(game, eng, chess.engine.Limit(time=a.movetime))
+    print(format_report(game, rep))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="aichess", description="AI vs AI chess")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -106,6 +127,12 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("pgn")
     rp.add_argument("--delay", type=float, default=0.5)
     rp.set_defaults(fn=_cmd_replay)
+
+    an = sub.add_parser("analyze", help="centipawn loss / accuracy per player (needs Stockfish)")
+    an.add_argument("pgn")
+    an.add_argument("--engine", help="path to Stockfish (default: on PATH)")
+    an.add_argument("--movetime", type=float, default=0.1, help="seconds per position")
+    an.set_defaults(fn=_cmd_analyze)
 
     tp = sub.add_parser("tournament", help="round-robin between several players")
     tp.add_argument("--players", required=True, help="YAML file with a `players:` list")
