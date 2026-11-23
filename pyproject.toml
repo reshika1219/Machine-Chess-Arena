@@ -1,0 +1,33 @@
+[project]
+name = "machine-chess-arena"
+version = "0.1.0"
+description = "AI vs AI chess: LLMs, Stockfish and baseline players refereed by python-chess"
+requires-python = ">=3.10"
+dependencies = [
+  "chess>=1.10",
+  "pydantic>=2.5",
+  "pyyaml>=6.0",
+  "rich>=13.0",
+  "anthropic>=0.40",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.110", "uvicorn>=0.29", "websockets>=12"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.scripts]
+aichess = "aichess.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"aichess.web" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
