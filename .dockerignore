@@ -1,0 +1,5 @@
+.venv
+games
+.git
+.env
+__pycache__

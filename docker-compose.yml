@@ -1,0 +1,10 @@
+# docker compose run --rm arena play --white llm:claude-opus-5-5 --black stockfish:level=8 --no-board
+# docker compose run --rm --service-ports arena play --white random --black greedy --web --host 0.0.0.0
+services:
+  arena:
+    build: .
+    env_file: .env
+    volumes:
+      - ./games:/app/games
+    ports:
+      - "8000:8000"

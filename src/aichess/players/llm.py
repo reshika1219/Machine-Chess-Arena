@@ -93,7 +93,7 @@ class LLMPlayer(Player):
             load_dotenv()
             if not os.environ.get("ANTHROPIC_API_KEY"):
                 raise RuntimeError("ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.")
-            self._client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
+            self._client = anthropic.Anthropic(max_retries=5)  # reads ANTHROPIC_API_KEY; SDK backs off on 429/5xx
         return self._client
 
     def choose_move(self, board: chess.Board, ctx: MoveContext) -> MoveResult:
