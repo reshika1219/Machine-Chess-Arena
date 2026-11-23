@@ -95,7 +95,7 @@ LLMs are weak at tracking board state from memory, so we help them:
 
 **Tuning knobs:** model name, temperature, max tokens, whether to allow "thinking" before the move, personality/system prompt.
 
-Use the `claude-api` guidance / latest model IDs when wiring this up (e.g. `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`). Cheaper models make faster, weaker players, which is useful for Elo ladders.
+Model IDs: `claude-opus-5-5`, `claude-sonnet-5-5` (default), `claude-haiku-5-5`. Cheaper models make faster, weaker players, which is useful for Elo ladders.
 
 ### 4.2 StockfishPlayer
 - Launch Stockfish with `chess.engine.SimpleEngine.popen_uci(path)`.
@@ -176,116 +176,142 @@ This makes games reproducible, debuggable and analysable (e.g. feed the PGN to S
 ## 10. Project structure
 
 ```
-BetterOne/
-├── README.md
+Machine-Chess-Arena/
+├── READ.md                     # this file
 ├── pyproject.toml
-├── config.example.yaml
+├── Dockerfile · docker-compose.yml
+├── config.example.yaml         # one game
+├── configs/players.example.yaml# a tournament line-up
 ├── .env.example                # ANTHROPIC_API_KEY=...
 ├── src/aichess/
-│   ├── __init__.py
 │   ├── players/
-│   │   ├── base.py             # Player interface
-│   │   ├── llm.py              # Claude player (prompting, parsing, retries)
-│   │   ├── stockfish.py
-│   │   ├── random_player.py
-│   │   ├── greedy.py
-│   │   └── factory.py          # build player from config
-│   ├── match.py                # referee loop, limits, termination
-│   ├── events.py               # event types + simple pub/sub
-│   ├── observers/
-│   │   ├── terminal.py
-│   │   ├── pgn_writer.py
-│   │   └── jsonl_logger.py
-│   ├── tournament.py           # many games + Elo
-│   ├── elo.py
-│   ├── config.py               # pydantic models
-│   ├── cli.py                  # entry point
-│   └── web/                    # (phase 3) FastAPI app + static frontend
-├── tests/
-│   ├── test_match.py
-│   ├── test_llm_parsing.py
-│   ├── test_players.py
-│   └── test_tournament.py
+│   │   ├── base.py             # Player interface (choose_move)
+│   │   ├── llm.py              # Claude player: prompt, strict parser, token accounting
+│   │   ├── stockfish.py        # any UCI engine
+│   │   ├── random_player.py · greedy.py
+│   │   └── factory.py          # PlayerConfig -> Player
+│   ├── match.py                # referee: validation, retries, timeout, clock, openings, resume
+│   ├── events.py               # GameStart / MoveEvent / GameOver + EventBus
+│   ├── observers/              # terminal.py · pgn_writer.py · jsonl_logger.py
+│   ├── runner.py               # build players, wire observers, run one game
+│   ├── tournament.py · elo.py  # round-robin, Elo, leaderboard
+│   ├── analysis.py             # centipawn loss / accuracy from a PGN
+│   ├── config.py               # pydantic models + `type:arg,key=val` shorthand
+│   ├── cli.py                  # `aichess` entry point
+│   └── web/                    # server.py (FastAPI + WebSocket) · static/index.html
+├── tests/                      # pytest suite (no network, no Stockfish required)
 └── games/                      # generated output (gitignored)
 ```
 
 ---
 
-## 11. Configuration (example)
+## 11. Configuration
+
+A full example lives in [config.example.yaml](config.example.yaml):
 
 ```yaml
-# config.example.yaml
 match:
   max_plies: 300
   move_timeout_seconds: 60
   illegal_move_retries: 3
   on_failure: forfeit          # forfeit | random_move
+  # clock_seconds: 300         # total thinking time per side; flagging loses
+  # random_opening_plies: 4    # seeded random opening so repeat games differ
+  # start_pgn: games/old/game.pgn   # resume a saved game
+  # start_fen: "..."
+  # seed: 42
 
 white:
   type: llm
-  provider: anthropic
   model: claude-opus-5-5
-  temperature: 0.3
   show_legal_moves: true
+  # temperature: 0.3           # optional; omitted = model default
 
 black:
   type: stockfish
-  path: /opt/homebrew/bin/stockfish
-  skill_level: 8               # 0-20
+  skill_level: 8               # 0-20, or `elo: 1500`
+  movetime: 0.2
 
 output:
   dir: games
   save_pgn: true
   save_jsonl: true
-  display: terminal            # terminal | web | none
+  display: terminal            # terminal | none  (use --web for the browser UI)
+  show_board: true
 ```
+
+Player shorthand for the CLI: `llm:<model>` · `stockfish:level=8` · `stockfish:elo=1500,movetime=0.1` · `random[:seed=1]` · `greedy`.
 
 ---
 
-## 12. Setup (once implemented)
+## 12. Setup
 
 ```bash
-# 1. Python environment
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+# 1. Python 3.10+ environment (3.12 recommended)
+python3 -m venv .venv && source .venv/bin/activate      # or: uv venv --python 3.12
+pip install -e ".[web,dev]"                              # or: uv pip install -e ".[web,dev]"
 
-# 2. Stockfish (macOS)
+# 2. Stockfish (macOS) - optional, needed for stockfish players and `analyze`
 brew install stockfish
 
-# 3. API key
-cp .env.example .env           # then put your ANTHROPIC_API_KEY in it
+# 3. API key - only for LLM players
+cp .env.example .env            # then put your ANTHROPIC_API_KEY in it
+
+# 4. Check everything works (offline)
+pytest
 ```
 
-## 13. Usage (planned CLI)
+Misconfiguration fails immediately with a clear message (missing key, bad Stockfish path) instead of forfeiting mid-game.
+
+## 13. Usage
 
 ```bash
-# One game, LLM vs Stockfish
-aichess play --white llm:claude-opus-5-5 --black stockfish:level=8
+# One game, no API key or engine needed
+aichess play --white greedy --black random
 
-# LLM vs LLM
-aichess play --white llm:claude-opus-5-5 --black llm:claude-haiku-5-5
+# LLM vs Stockfish (moves only, no board drawing)
+aichess play --white llm:claude-opus-5-5 --black stockfish:level=8 --no-board
+
+# LLM vs LLM with a 5-minute clock each, varied opening, lenient fallback
+aichess play --white llm:claude-opus-5-5 --black llm:claude-haiku-5-5 \
+    --clock 300 --random-opening 4 --seed 7 --on-failure random_move
+
+# Watch live in the browser (open http://127.0.0.1:8000 and press Play)
+aichess play --white llm:claude-opus-5-5 --black stockfish:elo=1500 --web
 
 # From a config file
 aichess play --config config.yaml
 
-# Tournament (10 games per pairing, alternating colours)
+# Continue an interrupted/saved game
+aichess play --white greedy --black random --resume games/<run>/game.pgn
+
+# Tournament: round robin, alternating colours, Elo + leaderboard
 aichess tournament --players configs/players.yaml --games 10
 
 # Replay a saved game in the terminal
-aichess replay games/2026-11-23_.../game.pgn
+aichess replay games/<run>/game.pgn --delay 0.3
+
+# Accuracy report for a saved game (needs Stockfish)
+aichess analyze games/<run>/game.pgn
 ```
+
+Each game writes `game.pgn`, `moves.jsonl` and `summary.json` into `games/<timestamp>_<white>_vs_<black>/`; tournaments also write `leaderboard.md` and `results.json`.
+
+**Docker:** `docker compose run --rm arena play --white random --black greedy` (image bundles Stockfish).
+
+**Web UI controls:** Play / Pause / Step buttons, a delay slider, move list, the last move's reasoning text (LLM players) and an eval bar (Stockfish players).
 
 ---
 
 ## 14. Roadmap
 
-| Phase | Deliverable | Done when |
+| Phase | Deliverable | Status |
 |---|---|---|
-| **1 — Core** | Board wrapper, `Player` interface, Random/Greedy players, Match loop, terminal display, PGN output | Random vs Random plays 100 valid games |
-| **2 — Engines & LLMs** | StockfishPlayer, LLMPlayer with retry/fallback, JSONL logging, config + CLI | Claude vs Stockfish finishes a game with every illegal move handled |
-| **3 — Experience** | Web UI with live board, reasoning panel, pause/step/speed | Game watchable in the browser |
-| **4 — Competition** | Tournament runner, Elo, leaderboard, accuracy analysis via Stockfish | Leaderboard generated from a batch of games |
-| **5 — Polish** | Clocks, opening books, personalities, cost tracking, Docker | One-command run on a fresh machine |
+| **1 - Core** | Board wrapper, `Player` interface, Random/Greedy players, Match loop, terminal display, PGN output | Done |
+| **2 - Engines & LLMs** | StockfishPlayer, LLMPlayer with retry/fallback, JSONL logging, config + CLI | Done |
+| **3 - Experience** | Web UI with live board, reasoning panel, pause/step/speed | Done |
+| **4 - Competition** | Tournament runner, Elo, leaderboard, accuracy analysis via Stockfish | Done |
+| **5 - Polish** | Clocks, random openings, resume-from-PGN, API backoff, Docker | Done (opening *books* and personalities still open) |
 
 ---
 
@@ -330,4 +356,12 @@ aichess replay games/2026-11-23_.../game.pgn
 
 ## 18. Status
 
-📝 Design complete — implementation not started. Next step: Phase 1 (core + baseline players).
+Phases 1-5 are implemented and covered by an offline test suite (`pytest`, 39 tests): referee edge cases (fool's mate, stalemate, repetition, insufficient material, promotion, timeouts, clock, forged-board tampering), LLM prompt/parse/retry logic with a mocked client, a stub UCI engine, Elo, tournaments, analysis, resume/openings, PGN round-trips and the web socket stream.
+
+**What has *not* been verified here, so test it on your machine first:**
+- **Real Stockfish** - not installed on the dev machine; the player and `analyze` were tested against a stub engine only.
+- **Real Claude API calls** - tested against a mocked client only (no API key was available). Run one short game with `--max-plies 20` before a long one.
+- **Docker image** - written but never built.
+- **Web UI visuals** - the server/WebSocket flow is tested, the page itself was not opened in a browser.
+
+**Still open (see section 16):** opening books, LLM commentator, "coached" LLM with Stockfish as a tool, Chess960, handicaps, fine-tuning data export.
