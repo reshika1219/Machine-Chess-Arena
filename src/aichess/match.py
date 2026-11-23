@@ -37,13 +37,40 @@ class Match:
         self.players = {chess.WHITE: white, chess.BLACK: black}
         self.cfg = config or MatchConfig()
         self.bus = bus or EventBus()
-        self.board = chess.Board(self.cfg.start_fen) if self.cfg.start_fen else chess.Board()
         self.rng = random.Random(self.cfg.seed)
+        self.base_fen = self.cfg.start_fen or chess.STARTING_FEN
+        self.board = chess.Board(self.base_fen)
+        self._history_san: list[str] = []
+        self.prior_moves: list[str] = []
+        self._apply_prior_moves()
+        self.clock = {"white": self.cfg.clock_seconds, "black": self.cfg.clock_seconds}
         self.illegal = {"white": 0, "black": 0}
         self.fallbacks = {"white": 0, "black": 0}
-        self._history_san: list[str] = []
         self._pool = ThreadPoolExecutor(max_workers=1)
         self._abort = False
+
+    def _push_prior(self, move: chess.Move) -> None:
+        self._history_san.append(self.board.san(move))
+        self.prior_moves.append(move.uci())
+        self.board.push(move)
+
+    def _apply_prior_moves(self) -> None:
+        """Resume from a PGN and/or play a few random opening plies."""
+        if self.cfg.start_pgn:
+            import chess.pgn
+
+            with open(self.cfg.start_pgn) as f:
+                game = chess.pgn.read_game(f)
+            if game is None:
+                raise ValueError(f"no game found in {self.cfg.start_pgn}")
+            self.base_fen = game.board().fen()
+            self.board = game.board()
+            for node in game.mainline():
+                self._push_prior(node.move)
+        for _ in range(self.cfg.random_opening_plies):
+            if self.board.is_game_over():
+                break
+            self._push_prior(self.rng.choice(list(self.board.legal_moves)))
 
     def abort(self) -> None:
         self._abort = True
@@ -85,7 +112,7 @@ class Match:
     # ---- the game loop ---------------------------------------------------------------------
     def play(self) -> GameResult:
         w, b = self.players[chess.WHITE].name, self.players[chess.BLACK].name
-        self.bus.emit(GameStart(w, b, self.board.fen()))
+        self.bus.emit(GameStart(w, b, self.base_fen, list(self.prior_moves), self.board.fen()))
         result, reason = "*", "unknown"
         try:
             while True:
@@ -108,6 +135,14 @@ class Match:
                     result = "0-1" if color == chess.WHITE else "1-0"
                     reason = "forfeit_illegal_moves"
                     break
+                elapsed = time.monotonic() - t0
+                if self.clock[SIDE[color]] is not None:
+                    self.clock[SIDE[color]] -= elapsed
+                    if self.clock[SIDE[color]] < 0:
+                        result = "0-1" if color == chess.WHITE else "1-0"
+                        reason = "timeout"
+                        break
+                    info = {**info, "clock_left": round(self.clock[SIDE[color]], 2)}
                 fen_before = self.board.fen()
                 san = self.board.san(move)
                 self.board.push(move)

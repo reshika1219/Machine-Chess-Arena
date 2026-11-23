@@ -23,6 +23,14 @@ def _cmd_play(a: argparse.Namespace) -> int:
         cfg.match.max_plies = a.max_plies
     if a.on_failure:
         cfg.match.on_failure = a.on_failure
+    if a.clock:
+        cfg.match.clock_seconds = a.clock
+    if a.random_opening:
+        cfg.match.random_opening_plies = a.random_opening
+    if a.resume:
+        cfg.match.start_pgn = a.resume
+    if a.seed is not None:
+        cfg.match.seed = a.seed
     if a.quiet:
         cfg.output.display = "none"
     if a.no_board:
@@ -82,6 +90,10 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--config", help="YAML game config")
     pl.add_argument("--max-plies", type=int)
     pl.add_argument("--on-failure", choices=["forfeit", "random_move"])
+    pl.add_argument("--clock", type=float, help="total thinking seconds per side (flag = loss on time)")
+    pl.add_argument("--random-opening", type=int, metavar="PLIES", help="play N random plies first")
+    pl.add_argument("--resume", metavar="PGN", help="continue a saved game from its last position")
+    pl.add_argument("--seed", type=int, help="seed for opening/fallback randomness")
     pl.add_argument("--out", help="output directory (default: games)")
     pl.add_argument("--quiet", action="store_true", help="no terminal display")
     pl.add_argument("--no-board", action="store_true", help="moves only, no board drawings")

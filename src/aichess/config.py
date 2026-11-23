@@ -15,6 +15,9 @@ class MatchConfig(BaseModel):
     on_failure: Literal["forfeit", "random_move"] = "forfeit"
     start_fen: Optional[str] = None
     seed: Optional[int] = None
+    clock_seconds: Optional[float] = None      # total thinking time per side (flag = loss on time)
+    random_opening_plies: int = 0              # play N random legal plies first so games differ
+    start_pgn: Optional[str] = None            # resume/continue from a saved PGN (mainline)
 
 
 class PlayerConfig(BaseModel):

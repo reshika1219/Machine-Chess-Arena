@@ -105,3 +105,41 @@ def test_random_vs_random_always_terminates_validly():
     for seed in range(25):
         r = Match(RandomPlayer(seed), RandomPlayer(seed + 1000), MatchConfig(max_plies=400)).play()
         assert r.result in {"1-0", "0-1", "1/2-1/2"}
+
+
+def test_clock_flag_loses_on_time():
+    import time
+
+    class Slow(RandomPlayer):
+        def choose_move(self, board, ctx):
+            time.sleep(0.06)
+            return super().choose_move(board, ctx)
+
+    r = Match(Slow(1), RandomPlayer(2), MatchConfig(clock_seconds=0.1)).play()
+    assert r.reason == "timeout" and r.result == "0-1"
+
+
+def test_random_opening_is_in_pgn_and_seeded(tmp_path):
+    results = []
+    for _ in range(2):
+        path = tmp_path / "o.pgn"
+        bus = EventBus(); bus.subscribe(PgnWriter(path))
+        m = Match(RandomPlayer(1), RandomPlayer(2), MatchConfig(random_opening_plies=6, seed=7, max_plies=10), bus)
+        r = m.play()
+        game = chess.pgn.read_game(io.StringIO(path.read_text()))
+        assert game.end().board().fen() == r.final_fen
+        assert "FEN" not in game.headers          # record starts from the normal start position
+        results.append(m.prior_moves)
+    assert len(results[0]) == 6 and results[0] == results[1]
+
+
+def test_resume_from_pgn(tmp_path):
+    path = tmp_path / "first.pgn"
+    bus = EventBus(); bus.subscribe(PgnWriter(path))
+    Match(RandomPlayer(1), RandomPlayer(2), MatchConfig(max_plies=8), bus).play()
+    events = []
+    bus2 = EventBus(); bus2.subscribe(events.append)
+    r = Match(RandomPlayer(3), RandomPlayer(4), MatchConfig(start_pgn=str(path), max_plies=12), bus2).play()
+    start = events[0]
+    assert len(start.prior_moves) == 8 and r.plies <= 12
+    assert [e for e in events if isinstance(e, MoveEvent)][0].ply == 9

@@ -27,6 +27,8 @@ class PgnWriter:
                 g.headers["FEN"], g.headers["SetUp"] = ev.fen, "1"
                 g.setup(chess.Board(ev.fen))
             self.game, self.node = g, g
+            for uci in ev.prior_moves:   # opening / resumed moves are part of the record
+                self.node = self.node.add_variation(chess.Move.from_uci(uci))
         elif isinstance(ev, MoveEvent) and self.node is not None:
             self.node = self.node.add_variation(chess.Move.from_uci(ev.uci))
         elif isinstance(ev, GameOver) and self.game is not None:

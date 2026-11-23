@@ -9,7 +9,9 @@ from typing import Any, Callable, Optional
 class GameStart:
     white: str
     black: str
-    fen: str
+    fen: str                                   # position the game record starts from
+    prior_moves: list[str] = field(default_factory=list)   # UCI moves already played (opening / resumed PGN)
+    fen_now: str = ""                          # position after prior_moves
 
 
 @dataclass

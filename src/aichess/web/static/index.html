@@ -107,7 +107,7 @@ function handle(ev) {
   if (ev.type === 'GameStart') {
     document.getElementById('white').textContent = '⬜ ' + ev.white;
     document.getElementById('black').textContent = '⬛ ' + ev.black;
-    fen = ev.fen; draw(); status('Ready — press Play');
+    fen = ev.fen_now || ev.fen; draw(); status('Ready — press Play');
   } else if (ev.type === 'MoveEvent') {
     moves.push(ev); lastUci = ev.uci; fen = ev.fen_after; draw(); renderMoves();
     status(`Move ${Math.ceil(ev.ply/2)} · ${ev.player} played ${ev.san}` + (ev.retries ? ` (retries: ${ev.retries})` : ''));
