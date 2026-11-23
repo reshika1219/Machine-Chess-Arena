@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,6 @@ def _to_dict(ev: object) -> dict:
 
 
 def create_app(cfg: GameConfig, autostart: bool = True) -> FastAPI:
-    app = FastAPI(title="Machine-Chess-Arena")
     events: list[dict] = []
     clients: set[WebSocket] = set()
     pacer = Pacer()
@@ -99,15 +99,15 @@ def create_app(cfg: GameConfig, autostart: bool = True) -> FastAPI:
         finally:
             state["done"] = True
 
-    @app.on_event("startup")
-    async def _startup() -> None:
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
         state["loop"] = asyncio.get_running_loop()
         if autostart:
             threading.Thread(target=run, daemon=True).start()
-
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
+        yield
         pacer.abort()
+
+    app = FastAPI(title="Machine-Chess-Arena", lifespan=lifespan)
 
     @app.get("/")
     async def index() -> FileResponse:
