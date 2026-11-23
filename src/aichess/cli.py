@@ -63,6 +63,15 @@ def _cmd_replay(a: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_tournament(a: argparse.Namespace) -> int:
+    from .tournament import load_players, run_tournament
+
+    cfgs = load_players(a.players)
+    res = run_tournament(cfgs, a.games, MatchConfig(max_plies=a.max_plies or 300), a.out, display=a.verbose)
+    print(res.leaderboard_md())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="aichess", description="AI vs AI chess")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -85,6 +94,14 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("pgn")
     rp.add_argument("--delay", type=float, default=0.5)
     rp.set_defaults(fn=_cmd_replay)
+
+    tp = sub.add_parser("tournament", help="round-robin between several players")
+    tp.add_argument("--players", required=True, help="YAML file with a `players:` list")
+    tp.add_argument("--games", type=int, default=2, help="games per pairing (rounded up to even)")
+    tp.add_argument("--max-plies", type=int)
+    tp.add_argument("--out", default="games/tournaments")
+    tp.add_argument("--verbose", action="store_true", help="show every game in the terminal")
+    tp.set_defaults(fn=_cmd_tournament)
 
     args = p.parse_args(argv)
     return args.fn(args)

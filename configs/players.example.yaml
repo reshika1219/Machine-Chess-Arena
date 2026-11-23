@@ -1,0 +1,12 @@
+# aichess tournament --players configs/players.yaml --games 10
+players:
+  - type: random
+  - type: greedy
+  - type: llm
+    model: claude-haiku-5-5
+  - type: llm
+    model: claude-opus-5-5
+  - type: stockfish
+    skill_level: 3
+  - type: stockfish
+    skill_level: 10
