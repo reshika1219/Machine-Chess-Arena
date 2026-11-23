@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Machine Chess Arena</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --text:#e6e8eb; --muted:#8b93a1; --light:#ead9b5; --dark:#b08a5e; --hl:rgba(255,214,10,.45); --accent:#4f8cff; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f3f4f6; --panel:#fff; --text:#1b1f27; --muted:#5d6675; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, sans-serif; }
+  header { padding:14px 20px; font-weight:600; font-size:18px; }
+  main { display:flex; gap:20px; padding:0 20px 20px; flex-wrap:wrap; justify-content:center; }
+  .left { display:flex; gap:10px; align-items:stretch; }
+  #evalbar { width:18px; background:#222; border-radius:4px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
+  #evalfill { background:#f2f2f2; height:50%; transition:height .4s; }
+  .boardwrap { width:min(88vw, 560px); }
+  #board { display:grid; grid-template-columns:repeat(8,1fr); aspect-ratio:1; border-radius:6px; overflow:hidden; }
+  .sq { display:flex; align-items:center; justify-content:center; font-size:min(8vw, 52px); line-height:1; user-select:none; }
+  .sq.l { background:var(--light); } .sq.d { background:var(--dark); } .sq.hl { box-shadow: inset 0 0 0 100px var(--hl); }
+  .pw { color:#fff; text-shadow:0 0 2px #000,0 0 2px #000,0 0 3px #000; } .pb { color:#111; }
+  .name { display:flex; justify-content:space-between; padding:6px 2px; font-weight:600; }
+  .side { width:min(92vw, 380px); display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--panel); border-radius:10px; padding:12px 14px; }
+  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:7px 14px; font:inherit; cursor:pointer; }
+  button.secondary { background:#394152; }
+  #moves { max-height:200px; overflow:auto; display:grid; grid-template-columns:40px 1fr 1fr; gap:2px 6px; font-variant-numeric:tabular-nums; }
+  #moves .n { color:var(--muted); } #moves .cur { background:var(--hl); border-radius:3px; }
+  #reason { white-space:pre-wrap; max-height:220px; overflow:auto; font-size:13px; color:var(--muted); }
+  #status { font-weight:600; } .err { color:#ff6b6b; }
+  label { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header>♞ Machine Chess Arena</header>
+<main>
+  <div class="left">
+    <div id="evalbar" title="Engine evaluation (Stockfish only)"><div id="evalfill"></div></div>
+    <div class="boardwrap">
+      <div class="name"><span id="black">Black</span><span id="bsub"></span></div>
+      <div id="board"></div>
+      <div class="name"><span id="white">White</span><span id="wsub"></span></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card">
+      <div id="status">Connecting…</div>
+      <div class="controls" style="margin-top:8px">
+        <button id="play">Play</button>
+        <button id="pause" class="secondary">Pause</button>
+        <button id="step" class="secondary">Step</button>
+      </div>
+      <div style="margin-top:10px"><label>Delay per move: <span id="dv">1.0</span>s
+        <input id="speed" type="range" min="0" max="5" step="0.25" value="1"></label></div>
+    </div>
+    <div class="card"><div id="moves"></div></div>
+    <div class="card"><label>Last move reasoning</label><div id="reason">—</div></div>
+  </div>
+</main>
+<script>
+const GLYPH = {K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟'};
+const boardEl = document.getElementById('board');
+const fenOf = f => f.split(' ')[0];
+let moves = [], lastUci = null, fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+function draw() {
+  boardEl.innerHTML = '';
+  const rows = fenOf(fen).split('/');
+  const hl = new Set();
+  if (lastUci) { for (const s of [lastUci.slice(0,2), lastUci.slice(2,4)]) hl.add(s); }
+  for (let r = 0; r < 8; r++) {
+    let file = 0;
+    for (const ch of rows[r]) {
+      if (/\d/.test(ch)) { for (let i=0;i<+ch;i++) cell(file++, r, null, hl); }
+      else cell(file++, r, ch, hl);
+    }
+  }
+}
+function cell(f, r, piece, hl) {
+  const d = document.createElement('div');
+  const sq = 'abcdefgh'[f] + (8 - r);
+  d.className = 'sq ' + ((f + r) % 2 ? 'd' : 'l') + (hl.has(sq) ? ' hl' : '');
+  if (piece) {
+    const s = document.createElement('span');
+    s.textContent = GLYPH[piece.toUpperCase()];
+    s.className = piece === piece.toUpperCase() ? 'pw' : 'pb';
+    d.appendChild(s);
+  }
+  boardEl.appendChild(d);
+}
+function renderMoves() {
+  const el = document.getElementById('moves'); el.innerHTML = '';
+  moves.forEach((m, i) => {
+    if (i % 2 === 0) { const n = document.createElement('span'); n.className='n'; n.textContent = (i/2+1)+'.'; el.appendChild(n); }
+    const s = document.createElement('span'); s.textContent = m.san; if (i === moves.length-1) s.className='cur'; el.appendChild(s);
+  });
+  el.scrollTop = el.scrollHeight;
+}
+function setEval(cp) {
+  const p = 1 / (1 + Math.exp(-cp / 400));   // squash centipawns into 0..1
+  document.getElementById('evalfill').style.height = (p * 100) + '%';
+}
+function status(t, err) { const s = document.getElementById('status'); s.textContent = t; s.className = err ? 'err' : ''; }
+
+function handle(ev) {
+  if (ev.type === 'GameStart') {
+    document.getElementById('white').textContent = '⬜ ' + ev.white;
+    document.getElementById('black').textContent = '⬛ ' + ev.black;
+    fen = ev.fen; draw(); status('Ready — press Play');
+  } else if (ev.type === 'MoveEvent') {
+    moves.push(ev); lastUci = ev.uci; fen = ev.fen_after; draw(); renderMoves();
+    status(`Move ${Math.ceil(ev.ply/2)} · ${ev.player} played ${ev.san}` + (ev.retries ? ` (retries: ${ev.retries})` : ''));
+    document.getElementById('reason').textContent = (ev.info && ev.info.raw_reply) || '(this player gives no reasoning)';
+    if (ev.info && ev.info.eval_cp !== undefined) setEval(ev.info.eval_cp);
+  } else if (ev.type === 'GameOver') {
+    status(`Game over: ${ev.result} (${ev.reason})`);
+  } else if (ev.type === 'Error') {
+    status('Error: ' + ev.message, true);
+  }
+}
+const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+const ws = new WebSocket(`${proto}://${location.host}/ws`);
+ws.onmessage = e => handle(JSON.parse(e.data));
+ws.onclose = () => status('Disconnected', true);
+const send = (cmd, value) => ws.readyState === 1 && ws.send(JSON.stringify({cmd, value}));
+document.getElementById('play').onclick = () => send('play');
+document.getElementById('pause').onclick = () => send('pause');
+document.getElementById('step').onclick = () => send('step');
+document.getElementById('speed').oninput = e => { document.getElementById('dv').textContent = (+e.target.value).toFixed(1); send('speed', +e.target.value); };
+draw();
+</script>
+</body>
+</html>
