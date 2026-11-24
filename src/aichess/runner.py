@@ -36,6 +36,10 @@ def run_game(
     if cfg.output.save_pgn or cfg.output.save_jsonl:
         stamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         out_dir = Path(cfg.output.dir) / f"{stamp}_{_slug(white.name)}_vs_{_slug(black.name)}"
+        n = 1
+        while out_dir.exists():        # same players in the same second: never overwrite a saved game
+            n += 1
+            out_dir = out_dir.with_name(f"{stamp}_{_slug(white.name)}_vs_{_slug(black.name)}-{n}")
         if cfg.output.save_pgn:
             bus.subscribe(PgnWriter(out_dir / "game.pgn"))
         if cfg.output.save_jsonl:

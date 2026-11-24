@@ -63,3 +63,12 @@ def test_bootstrap_ci_narrows_with_more_games_and_brackets_rating():
     ci, r = bootstrap_ci(many, samples=100, seed=1), compute_ratings(many)
     assert ci["a"][0] <= r["a"] <= ci["a"][1]
     assert bootstrap_ci([]) == {}
+
+
+def test_same_second_same_players_do_not_overwrite_each_other(tmp_path):
+    from aichess.config import GameConfig, OutputConfig
+    from aichess.runner import run_game
+    cfg = GameConfig(white=PlayerConfig(type="random", seed=1), black=PlayerConfig(type="random", seed=2),
+                     match=MatchConfig(max_plies=4), output=OutputConfig(dir=str(tmp_path), display="none"))
+    dirs = {run_game(cfg)[1] for _ in range(3)}
+    assert len(dirs) == 3 and len(list(tmp_path.glob("*/game.pgn"))) == 3

@@ -72,3 +72,14 @@ def test_analysis_cached_and_missing_engine_is_501(root, monkeypatch):
                      output=OutputConfig(dir=str(path), display="none"))
     with TestClient(create_app(cfg, autostart=False)) as c:
         assert c.get(f"/api/games/{gid}/analysis").status_code == 501
+
+
+def test_ui_assets_are_served():
+    cfg = GameConfig(white=PlayerConfig(type="random"), black=PlayerConfig(type="random"),
+                     output=OutputConfig(save_pgn=False, save_jsonl=False, display="none"))
+    with TestClient(create_app(cfg, autostart=False)) as c:
+        page = c.get("/").text
+        assert "/static/app.js" in page and "/static/app.css" in page
+        js = c.get("/static/app.js")
+        assert js.status_code == 200 and "textContent" in js.text and "innerHTML" not in js.text
+        assert c.get("/static/app.css").status_code == 200
