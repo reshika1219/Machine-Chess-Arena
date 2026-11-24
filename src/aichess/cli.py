@@ -124,6 +124,15 @@ def _cmd_analyze(a: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_export(a: argparse.Namespace) -> int:
+    from .export import export_dir
+
+    n = export_dir(Path(a.games_dir), Path(a.out), winners_only=not a.all_moves, player=a.player,
+                   include_legal_moves=not a.no_legal_moves)
+    print(f"Wrote {n} examples to {a.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="aichess", description="AI vs AI chess")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -178,6 +187,14 @@ def main(argv: list[str] | None = None) -> int:
     tp.add_argument("--chess960", action="store_true", help="random Chess960 position per game")
     tp.add_argument("--verbose", action="store_true", help="show every game in the terminal")
     tp.set_defaults(fn=_cmd_tournament)
+
+    ex = sub.add_parser("export", help="export saved games as fine-tuning examples (JSONL, chat format)")
+    ex.add_argument("games_dir", nargs="?", default="games")
+    ex.add_argument("--out", default="finetune.jsonl")
+    ex.add_argument("--all-moves", action="store_true", help="include the losing side too (default: winners only)")
+    ex.add_argument("--player", help="only moves by players whose name contains this text")
+    ex.add_argument("--no-legal-moves", action="store_true", help="omit the legal-move list from prompts")
+    ex.set_defaults(fn=_cmd_export)
 
     args = p.parse_args(argv)
     return args.fn(args)
