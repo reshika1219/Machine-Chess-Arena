@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import chess
+import chess.pgn
 
 from .config import MatchConfig
 from .events import EventBus, GameOver, GameStart, MoveEvent
@@ -74,8 +75,6 @@ class Match:
     def _apply_prior_moves(self) -> None:
         """Resume from a PGN and/or play a few random opening plies."""
         if self.cfg.start_pgn:
-            import chess.pgn
-
             with open(self.cfg.start_pgn) as f:
                 game = chess.pgn.read_game(f)
             if game is None:
@@ -85,6 +84,11 @@ class Match:
             self.cfg.chess960 = self.board.chess960
             for node in game.mainline():
                 self._push_prior(node.move)
+        for uci in self.cfg.opening_moves:
+            move = chess.Move.from_uci(uci)
+            if move not in self.board.legal_moves:
+                raise ValueError(f"opening move {uci} is illegal in {self.board.fen()}")
+            self._push_prior(move)
         for _ in range(self.cfg.random_opening_plies):
             if self.board.is_game_over():
                 break

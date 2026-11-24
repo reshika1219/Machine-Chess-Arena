@@ -18,6 +18,7 @@ class MatchConfig(BaseModel):
     clock_seconds: Optional[float] = None      # total thinking time per side (flag = loss on time)
     random_opening_plies: int = 0              # play N random legal plies first so games differ
     start_pgn: Optional[str] = None            # resume/continue from a saved PGN (mainline)
+    opening_moves: list[str] = Field(default_factory=list)   # UCI plies played before the players take over
     chess960: bool = False                     # Fischer Random start position
     chess960_position: Optional[int] = Field(default=None, ge=0, le=959)  # None = random (seeded)
     # Handicaps. clock_seconds_{white,black} override clock_seconds for that side (time odds).
