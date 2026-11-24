@@ -1,4 +1,5 @@
-# aichess tournament --players configs/players.yaml --games 10
+# aichess tournament --players configs/players.yaml --games 10 --openings builtin --format swiss
+# `anchor_elo` pins a player's rating to a known value; stockfish players with `elo:` anchor automatically.
 players:
   - type: random
   - type: greedy
@@ -6,7 +7,15 @@ players:
     model: claude-haiku-5-5
   - type: llm
     model: claude-opus-5-5
+  - type: llm                       # same model, now with Stockfish as a tool
+    model: claude-opus-5-5
+    coach: true
+  - type: llm
+    model: claude-haiku-5-5
+    personality: aggressive
   - type: stockfish
     skill_level: 3
   - type: stockfish
     skill_level: 10
+  - type: stockfish
+    elo: 1500                       # auto-anchored at 1500

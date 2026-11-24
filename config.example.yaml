@@ -4,12 +4,21 @@ match:
   move_timeout_seconds: 60
   illegal_move_retries: 3
   on_failure: forfeit          # forfeit | random_move
+  # chess960: true             # Fischer Random (chess960_position: 0-959, else random per seed)
+  # material_odds: "black:q"   # handicap: remove pieces (letters q r b n p)
+  # clock_seconds: 300         # time odds: clock_seconds_white / clock_seconds_black override per side
+  # opening_moves: [e2e4, e7e5, g1f3]   # or use the CLI --opening builtin|FILE
 
 white:
   type: llm
   model: claude-opus-5-5
   show_legal_moves: true
   # temperature: 0.3           # optional; omit to use the model default
+  # personality: aggressive    # balanced | aggressive | positional | cautious | tactician | endgame
+  # coach: true                # may call Stockfish as a tool (coach_movetime, max_tool_calls)
+  # price_in_per_mtok: 3.0     # USD per million tokens (your model's price) -> cost tracking
+  # price_out_per_mtok: 15.0
+  # budget_usd: 2.0            # player forfeits once it has spent this much
 
 black:
   type: stockfish
@@ -23,3 +32,7 @@ output:
   save_jsonl: true
   display: terminal            # terminal | none  (use --web for the browser UI)
   show_board: true
+
+# commentary:                  # an LLM narrates the game (terminal, web UI, commentary.jsonl)
+#   model: claude-haiku-5-5
+#   every: 2                   # comment every N plies
