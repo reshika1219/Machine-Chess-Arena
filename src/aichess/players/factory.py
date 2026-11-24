@@ -16,7 +16,9 @@ def build_player(cfg: PlayerConfig) -> Player:
     elif cfg.type == "stockfish":
         p = StockfishPlayer(cfg.path, cfg.skill_level, cfg.elo, cfg.movetime, cfg.depth)
     elif cfg.type == "llm":
-        p = LLMPlayer(cfg.model, cfg.temperature, cfg.max_tokens, cfg.show_legal_moves)
+        p = LLMPlayer(cfg.model, cfg.temperature, cfg.max_tokens, cfg.show_legal_moves,
+                      personality=cfg.personality, price_in_per_mtok=cfg.price_in_per_mtok,
+                      price_out_per_mtok=cfg.price_out_per_mtok, budget_usd=cfg.budget_usd)
     else:  # pragma: no cover
         raise ValueError(f"unknown player type {cfg.type}")
     if cfg.name:

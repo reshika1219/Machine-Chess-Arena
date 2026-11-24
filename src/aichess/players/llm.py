@@ -8,6 +8,11 @@ from typing import Any, Optional
 import chess
 
 from .base import MoveContext, MoveResult, Player
+from .personalities import style_prompt
+
+
+class BudgetExceeded(RuntimeError):
+    pass
 
 SYSTEM_PROMPT = """You are a strong chess player. You will be shown the current position and must \
 choose exactly one legal move.
@@ -76,13 +81,22 @@ class LLMPlayer(Player):
         system_prompt: str = SYSTEM_PROMPT,
         client: Any = None,
         name: Optional[str] = None,
+        personality: Optional[str] = None,
+        price_in_per_mtok: Optional[float] = None,
+        price_out_per_mtok: Optional[float] = None,
+        budget_usd: Optional[float] = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.show_legal_moves = show_legal_moves
-        self.system_prompt = system_prompt
+        self.system_prompt = system_prompt + style_prompt(personality)
+        self.personality = personality
         self.name = name or model
+        self.price_in, self.price_out = price_in_per_mtok, price_out_per_mtok
+        self.budget_usd = budget_usd
+        self.spent_usd = 0.0
+        self.total_tokens = {"input": 0, "output": 0}
         self._client = client
         if client is None:
             self.client  # fail fast (missing key / package) instead of forfeiting mid-game
@@ -99,7 +113,25 @@ class LLMPlayer(Player):
             self._client = anthropic.Anthropic(max_retries=5)  # reads ANTHROPIC_API_KEY; SDK backs off on 429/5xx
         return self._client
 
+    def _account(self, resp: Any) -> dict[str, Any]:
+        """Token + (optional) dollar accounting for one API response."""
+        usage = getattr(resp, "usage", None)
+        i, o = getattr(usage, "input_tokens", 0) or 0, getattr(usage, "output_tokens", 0) or 0
+        self.total_tokens["input"] += i
+        self.total_tokens["output"] += o
+        info: dict[str, Any] = {"input_tokens": i, "output_tokens": o}
+        if self.price_in is not None and self.price_out is not None:
+            cost = (i * self.price_in + o * self.price_out) / 1e6
+            self.spent_usd += cost
+            info["cost_usd"] = round(cost, 6)
+        return info
+
+    def _check_budget(self) -> None:
+        if self.budget_usd is not None and self.spent_usd >= self.budget_usd:
+            raise BudgetExceeded(f"budget of ${self.budget_usd:.2f} used up (spent ${self.spent_usd:.4f})")
+
     def choose_move(self, board: chess.Board, ctx: MoveContext) -> MoveResult:
+        self._check_budget()
         kwargs: dict[str, Any] = dict(
             model=self.model,
             max_tokens=self.max_tokens,
@@ -111,9 +143,4 @@ class LLMPlayer(Player):
         resp = self.client.messages.create(**kwargs)
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         move = parse_move(text, board)
-        usage = getattr(resp, "usage", None)
-        return MoveResult(move, {
-            "raw_reply": text,
-            "input_tokens": getattr(usage, "input_tokens", 0),
-            "output_tokens": getattr(usage, "output_tokens", 0),
-        })
+        return MoveResult(move, {"raw_reply": text, **self._account(resp)})

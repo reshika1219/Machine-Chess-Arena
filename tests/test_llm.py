@@ -72,3 +72,27 @@ def test_temperature_only_sent_when_set():
     assert "temperature" not in seen
     LLMPlayer(client=client, temperature=0.3).choose_move(chess.Board(), MoveContext(1, []))
     assert seen["temperature"] == 0.3
+
+
+def test_personality_added_to_system_prompt_and_unknown_rejected():
+    p = LLMPlayer(client=FakeClient([]), personality="aggressive")
+    assert "Your style" in p.system_prompt and "aggressively" in p.system_prompt
+    assert "Your style" not in LLMPlayer(client=FakeClient([])).system_prompt
+    with pytest.raises(ValueError):
+        LLMPlayer(client=FakeClient([]), personality="sleepy")
+
+
+def test_cost_tracking_and_budget_stop():
+    from aichess.players.llm import BudgetExceeded
+    p = LLMPlayer(client=FakeClient([]), price_in_per_mtok=1000, price_out_per_mtok=2000, budget_usd=0.025)
+    r = p.choose_move(chess.Board(), MoveContext(1, []))
+    assert r.info["cost_usd"] == pytest.approx((10 * 1000 + 5 * 2000) / 1e6)   # 0.02
+    p.choose_move(chess.Board(), MoveContext(1, []))                           # 0.04 total now
+    with pytest.raises(BudgetExceeded):
+        p.choose_move(chess.Board(), MoveContext(1, []))
+    assert p.total_tokens == {"input": 20, "output": 10}
+
+
+def test_cost_absent_without_prices():
+    r = LLMPlayer(client=FakeClient([])).choose_move(chess.Board(), MoveContext(1, []))
+    assert "cost_usd" not in r.info

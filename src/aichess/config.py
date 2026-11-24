@@ -35,6 +35,10 @@ class PlayerConfig(BaseModel):
     temperature: Optional[float] = None
     max_tokens: int = 1024
     show_legal_moves: bool = True
+    personality: Optional[str] = None          # balanced | aggressive | positional | cautious | tactician | endgame
+    price_in_per_mtok: Optional[float] = None  # USD per million input tokens (enables cost tracking)
+    price_out_per_mtok: Optional[float] = None
+    budget_usd: Optional[float] = None         # stop (forfeit) once this player has spent this much
     # stockfish
     path: Optional[str] = None
     skill_level: Optional[int] = Field(default=None, ge=0, le=20)
