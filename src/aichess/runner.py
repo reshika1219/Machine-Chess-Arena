@@ -14,6 +14,7 @@ from .observers.pgn_writer import PgnWriter
 from .observers.terminal import TerminalObserver
 from .players.base import Player
 from .players.factory import build_player
+from .players.llm import LLMPlayer
 
 
 def _slug(s: str) -> str:
@@ -43,6 +44,10 @@ def run_game(
         bus.subscribe(TerminalObserver(cfg.output.show_board))
     for obs in extra_observers or []:
         bus.subscribe(obs)
+    if cfg.commentary:
+        from .observers.commentator import Commentator
+        c = cfg.commentary
+        bus.subscribe(Commentator(bus.emit, LLMPlayer(model=c.model).client, c.model, c.every, c.style, c.max_tokens))
     try:
         return Match(white, black, cfg.match, bus).play(), out_dir
     finally:

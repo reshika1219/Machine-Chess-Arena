@@ -36,6 +36,9 @@ def _cmd_play(a: argparse.Namespace) -> int:
         cfg.match.chess960 = True
         if a.position is not None:
             cfg.match.chess960_position = a.position
+    if a.commentary:
+        from .config import CommentaryConfig
+        cfg.commentary = CommentaryConfig(model=a.commentary if a.commentary != "default" else "claude-haiku-5-5")
     if a.odds:
         cfg.match.material_odds = a.odds
     if a.clock_white is not None:
@@ -124,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--clock", type=float, help="total thinking seconds per side (flag = loss on time)")
     pl.add_argument("--chess960", action="store_true", help="Fischer Random start position")
     pl.add_argument("--position", type=int, metavar="0-959", help="Chess960 start position number (implies --chess960)")
+    pl.add_argument("--commentary", nargs="?", const="default", metavar="MODEL",
+                    help="LLM commentator narrates the game (optionally give the model)")
     pl.add_argument("--odds", metavar="SIDE:PIECES", help="material odds, e.g. black:q removes Black's queen")
     pl.add_argument("--clock-white", type=float, help="White's clock in seconds (time odds)")
     pl.add_argument("--clock-black", type=float, help="Black's clock in seconds (time odds)")

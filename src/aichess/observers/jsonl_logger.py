@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from ..events import GameOver, GameStart, MoveEvent
+from ..events import Commentary, GameOver, GameStart, MoveEvent
 
 
 class JsonlLogger:
@@ -31,6 +31,9 @@ class JsonlLogger:
             self.tokens["output"] += ev.info.get("output_tokens", 0)
             self.cost[ev.side] += ev.info.get("cost_usd", 0.0)
             with self.moves_path.open("a") as f:
+                f.write(json.dumps(asdict(ev)) + "\n")
+        elif isinstance(ev, Commentary):
+            with (self.dir / "commentary.jsonl").open("a") as f:
                 f.write(json.dumps(asdict(ev)) + "\n")
         elif isinstance(ev, GameOver):
             summary = {

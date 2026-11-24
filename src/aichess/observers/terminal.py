@@ -3,7 +3,7 @@ from __future__ import annotations
 import chess
 from rich.console import Console
 
-from ..events import GameOver, GameStart, MoveEvent
+from ..events import Commentary, GameOver, GameStart, MoveEvent
 
 console = Console()
 
@@ -27,5 +27,7 @@ class TerminalObserver:
             if self.show_board:
                 board = chess.Board(ev.fen_after)
                 console.print(board.unicode(borders=False, empty_square="·"), highlight=False)
+        elif isinstance(ev, Commentary):
+            console.print(f"  [italic cyan]🎙 {ev.text}[/]")
         elif isinstance(ev, GameOver):
             console.rule(f"[bold green]{ev.result}[/] — {ev.reason} after {ev.plies} plies")

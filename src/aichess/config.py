@@ -61,11 +61,19 @@ class OutputConfig(BaseModel):
     show_board: bool = True
 
 
+class CommentaryConfig(BaseModel):
+    model: str = "claude-haiku-5-5"
+    every: int = Field(default=2, ge=1)        # comment every N plies
+    style: str = "an enthusiastic but insightful chess commentator"
+    max_tokens: int = 200
+
+
 class GameConfig(BaseModel):
     match: MatchConfig = MatchConfig()
     white: PlayerConfig
     black: PlayerConfig
     output: OutputConfig = OutputConfig()
+    commentary: Optional[CommentaryConfig] = None
 
 
 def load_game_config(path: str | Path) -> GameConfig:

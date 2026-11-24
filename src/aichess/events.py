@@ -40,6 +40,13 @@ class GameOver:
     final_fen: str
 
 
+@dataclass
+class Commentary:
+    ply: int            # the ply this remark is about (0 = pre-game; final ply for the wrap-up)
+    text: str
+    kind: str = "move"  # "move" | "summary"
+
+
 class EventBus:
     def __init__(self) -> None:
         self._subs: list[Callable[[Any], None]] = []
@@ -48,5 +55,5 @@ class EventBus:
         self._subs.append(fn)
 
     def emit(self, event: Any) -> None:
-        for fn in self._subs:
+        for fn in list(self._subs):
             fn(event)
