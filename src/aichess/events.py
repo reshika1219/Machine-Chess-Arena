@@ -12,6 +12,9 @@ class GameStart:
     fen: str                                   # position the game record starts from
     prior_moves: list[str] = field(default_factory=list)   # UCI moves already played (opening / resumed PGN)
     fen_now: str = ""                          # position after prior_moves
+    chess960: bool = False
+    clock_seconds: dict[str, Optional[float]] = field(default_factory=dict)  # starting clock per side
+    handicap: str = ""                         # human-readable handicap description
 
 
 @dataclass

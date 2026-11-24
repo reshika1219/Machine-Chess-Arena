@@ -32,6 +32,16 @@ def _cmd_play(a: argparse.Namespace) -> int:
         cfg.match.start_pgn = a.resume
     if a.seed is not None:
         cfg.match.seed = a.seed
+    if a.chess960 or a.position is not None:
+        cfg.match.chess960 = True
+        if a.position is not None:
+            cfg.match.chess960_position = a.position
+    if a.odds:
+        cfg.match.material_odds = a.odds
+    if a.clock_white is not None:
+        cfg.match.clock_seconds_white = a.clock_white
+    if a.clock_black is not None:
+        cfg.match.clock_seconds_black = a.clock_black
     if a.quiet:
         cfg.output.display = "none"
     if a.no_board:
@@ -112,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--max-plies", type=int)
     pl.add_argument("--on-failure", choices=["forfeit", "random_move"])
     pl.add_argument("--clock", type=float, help="total thinking seconds per side (flag = loss on time)")
+    pl.add_argument("--chess960", action="store_true", help="Fischer Random start position")
+    pl.add_argument("--position", type=int, metavar="0-959", help="Chess960 start position number (implies --chess960)")
+    pl.add_argument("--odds", metavar="SIDE:PIECES", help="material odds, e.g. black:q removes Black's queen")
+    pl.add_argument("--clock-white", type=float, help="White's clock in seconds (time odds)")
+    pl.add_argument("--clock-black", type=float, help="Black's clock in seconds (time odds)")
     pl.add_argument("--random-opening", type=int, metavar="PLIES", help="play N random plies first")
     pl.add_argument("--resume", metavar="PGN", help="continue a saved game from its last position")
     pl.add_argument("--seed", type=int, help="seed for opening/fallback randomness")

@@ -39,11 +39,28 @@ class Match:
         self.bus = bus or EventBus()
         self.rng = random.Random(self.cfg.seed)
         self.base_fen = self.cfg.start_fen or chess.STARTING_FEN
-        self.board = chess.Board(self.base_fen)
+        if self.cfg.chess960 and not self.cfg.start_fen:
+            pos = self.cfg.chess960_position
+            self.chess960_position = self.rng.randrange(960) if pos is None else pos
+            self.base_fen = chess.Board.from_chess960_pos(self.chess960_position).fen()
+        self.board = chess.Board(self.base_fen, chess960=self.cfg.chess960)
+        self.handicap = ""
+        if self.cfg.material_odds:
+            from .handicap import apply_material_odds
+            apply_material_odds(self.board, self.cfg.material_odds)
+            self.base_fen = self.board.fen()
+            self.handicap = f"material odds {self.cfg.material_odds}"
         self._history_san: list[str] = []
         self.prior_moves: list[str] = []
         self._apply_prior_moves()
-        self.clock = {"white": self.cfg.clock_seconds, "black": self.cfg.clock_seconds}
+        self.clock = {
+            "white": self.cfg.clock_seconds_white if self.cfg.clock_seconds_white is not None else self.cfg.clock_seconds,
+            "black": self.cfg.clock_seconds_black if self.cfg.clock_seconds_black is not None else self.cfg.clock_seconds,
+        }
+        if self.clock["white"] != self.clock["black"]:
+            note = f"time odds {self.clock['white']}s vs {self.clock['black']}s"
+            self.handicap = f"{self.handicap}; {note}" if self.handicap else note
+        self.start_clock = dict(self.clock)
         self.illegal = {"white": 0, "black": 0}
         self.fallbacks = {"white": 0, "black": 0}
         self._pool = ThreadPoolExecutor(max_workers=1)
@@ -63,8 +80,9 @@ class Match:
                 game = chess.pgn.read_game(f)
             if game is None:
                 raise ValueError(f"no game found in {self.cfg.start_pgn}")
-            self.base_fen = game.board().fen()
             self.board = game.board()
+            self.base_fen = self.board.fen()
+            self.cfg.chess960 = self.board.chess960
             for node in game.mainline():
                 self._push_prior(node.move)
         for _ in range(self.cfg.random_opening_plies):
@@ -112,7 +130,9 @@ class Match:
     # ---- the game loop ---------------------------------------------------------------------
     def play(self) -> GameResult:
         w, b = self.players[chess.WHITE].name, self.players[chess.BLACK].name
-        self.bus.emit(GameStart(w, b, self.base_fen, list(self.prior_moves), self.board.fen()))
+        self.bus.emit(GameStart(w, b, self.base_fen, list(self.prior_moves), self.board.fen(),
+                                chess960=self.board.chess960, clock_seconds=dict(self.start_clock),
+                                handicap=self.handicap))
         result, reason = "*", "unknown"
         try:
             while True:

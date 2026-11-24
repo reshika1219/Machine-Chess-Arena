@@ -18,6 +18,13 @@ class MatchConfig(BaseModel):
     clock_seconds: Optional[float] = None      # total thinking time per side (flag = loss on time)
     random_opening_plies: int = 0              # play N random legal plies first so games differ
     start_pgn: Optional[str] = None            # resume/continue from a saved PGN (mainline)
+    chess960: bool = False                     # Fischer Random start position
+    chess960_position: Optional[int] = Field(default=None, ge=0, le=959)  # None = random (seeded)
+    # Handicaps. clock_seconds_{white,black} override clock_seconds for that side (time odds).
+    clock_seconds_white: Optional[float] = None
+    clock_seconds_black: Optional[float] = None
+    # Material odds: "black:q" removes Black's queen; letters q r b n p, e.g. "white:qn".
+    material_odds: Optional[str] = None
 
 
 class PlayerConfig(BaseModel):

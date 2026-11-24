@@ -39,6 +39,9 @@ def build_prompt(board: chess.Board, ctx: MoveContext, show_legal_moves: bool = 
     ]
     if board.is_check():
         lines.append("You are in check.")
+    if board.chess960:
+        lines.append("This is Chess960: castling is written as the king moving onto its own rook "
+                     "(UCI), and the back rank is shuffled.")
     if show_legal_moves:
         lines.append("Legal moves (UCI): " + " ".join(m.uci() for m in board.legal_moves))
     if ctx.feedback:

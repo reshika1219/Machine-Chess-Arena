@@ -23,9 +23,10 @@ class PgnWriter:
             g.headers["Event"] = "Machine-Chess-Arena"
             g.headers["Date"] = dt.date.today().strftime("%Y.%m.%d")
             g.headers["White"], g.headers["Black"] = ev.white, ev.black
-            if ev.fen != chess.STARTING_FEN:
-                g.headers["FEN"], g.headers["SetUp"] = ev.fen, "1"
-                g.setup(chess.Board(ev.fen))
+            if ev.fen != chess.STARTING_FEN or ev.chess960:
+                g.setup(chess.Board(ev.fen, chess960=ev.chess960))  # sets FEN/SetUp (+Variant for 960)
+            if ev.handicap:
+                g.headers["Handicap"] = ev.handicap
             self.game, self.node = g, g
             for uci in ev.prior_moves:   # opening / resumed moves are part of the record
                 self.node = self.node.add_variation(chess.Move.from_uci(uci))
