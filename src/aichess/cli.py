@@ -92,8 +92,15 @@ def _cmd_tournament(a: argparse.Namespace) -> int:
     from .tournament import load_players, run_tournament
 
     cfgs = load_players(a.players)
-    res = run_tournament(cfgs, a.games, MatchConfig(max_plies=a.max_plies or 300), a.out, display=a.verbose)
+    openings = None
+    if a.openings:
+        from .openings import load_openings
+        openings = load_openings(a.openings, a.opening_plies)
+    mc = MatchConfig(max_plies=a.max_plies or 300, seed=a.seed, chess960=a.chess960)
+    res = run_tournament(cfgs, a.games, mc, a.out, display=a.verbose, fmt=a.format, rounds=a.rounds,
+                         openings=openings, seed=a.seed)
     print(res.leaderboard_md())
+    print(f"Saved to: {getattr(res, 'dir', a.out)}")
     return 0
 
 
@@ -163,6 +170,12 @@ def main(argv: list[str] | None = None) -> int:
     tp.add_argument("--games", type=int, default=2, help="games per pairing (rounded up to even)")
     tp.add_argument("--max-plies", type=int)
     tp.add_argument("--out", default="games/tournaments")
+    tp.add_argument("--format", choices=["round_robin", "swiss"], default="round_robin")
+    tp.add_argument("--rounds", type=int, help="Swiss rounds (default: min(players-1, 5))")
+    tp.add_argument("--openings", metavar="builtin|FILE", help="opening suite; each colour-swapped pair shares one opening")
+    tp.add_argument("--opening-plies", type=int, help="truncate suite lines to this many plies")
+    tp.add_argument("--seed", type=int)
+    tp.add_argument("--chess960", action="store_true", help="random Chess960 position per game")
     tp.add_argument("--verbose", action="store_true", help="show every game in the terminal")
     tp.set_defaults(fn=_cmd_tournament)
 

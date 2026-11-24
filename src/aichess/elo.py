@@ -35,3 +35,31 @@ def compute_ratings(
             shift = sum(anchors[n] - r[n] for n in known) / len(known)
             r = {n: v + shift for n, v in r.items()}
     return r
+
+
+def bootstrap_ci(
+    games: list[tuple[str, str, float]], anchors: dict[str, float] | None = None,
+    samples: int = 200, confidence: float = 0.95, seed: int = 0,
+) -> dict[str, tuple[float, float]]:
+    """Percentile bootstrap over games: resample the results with replacement, re-rate, and report
+    the central `confidence` interval per player. Small samples give (honestly) wide intervals."""
+    import random
+
+    if not games:
+        return {}
+    rng = random.Random(seed)
+    names = {n for w, b, _ in games for n in (w, b)}
+    draws: dict[str, list[float]] = {n: [] for n in names}
+    for _ in range(samples):
+        sample = [games[rng.randrange(len(games))] for _ in games]
+        r = compute_ratings(sample, anchors=anchors)
+        for n, v in r.items():
+            draws[n].append(v)
+    lo_q, hi_q = (1 - confidence) / 2, 1 - (1 - confidence) / 2
+    out: dict[str, tuple[float, float]] = {}
+    for n, vals in draws.items():
+        if not vals:
+            continue
+        vals.sort()
+        out[n] = (vals[int(lo_q * (len(vals) - 1))], vals[int(round(hi_q * (len(vals) - 1)))])
+    return out

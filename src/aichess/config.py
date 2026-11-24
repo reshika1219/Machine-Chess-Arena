@@ -50,6 +50,7 @@ class PlayerConfig(BaseModel):
     elo: Optional[int] = None
     movetime: float = 0.2
     depth: Optional[int] = None
+    anchor_elo: Optional[float] = None         # known strength, used to anchor tournament ratings
     # random / greedy
     seed: Optional[int] = None
 
