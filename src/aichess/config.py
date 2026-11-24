@@ -38,6 +38,10 @@ class PlayerConfig(BaseModel):
     personality: Optional[str] = None          # balanced | aggressive | positional | cautious | tactician | endgame
     price_in_per_mtok: Optional[float] = None  # USD per million input tokens (enables cost tracking)
     price_out_per_mtok: Optional[float] = None
+    coach: bool = False                        # let the LLM call Stockfish as a tool
+    coach_movetime: float = 0.3
+    coach_path: Optional[str] = None
+    max_tool_calls: int = 4
     budget_usd: Optional[float] = None         # stop (forfeit) once this player has spent this much
     # stockfish
     path: Optional[str] = None

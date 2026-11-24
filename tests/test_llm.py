@@ -96,3 +96,62 @@ def test_cost_tracking_and_budget_stop():
 def test_cost_absent_without_prices():
     r = LLMPlayer(client=FakeClient([])).choose_move(chess.Board(), MoveContext(1, []))
     assert "cost_usd" not in r.info
+
+
+class ToolClient:
+    """First reply asks for the engine tool, then answers with a move."""
+
+    def __init__(self, tool_rounds=1, final="Engine says e4. <move>e2e4</move>"):
+        self.rounds, self.final, self.calls = tool_rounds, final, []
+        self.messages = SimpleNamespace(create=self._create)
+
+    def _create(self, **kw):
+        self.calls.append(kw)
+        usage = SimpleNamespace(input_tokens=10, output_tokens=5)
+        if self.rounds > 0:
+            self.rounds -= 1
+            blk = SimpleNamespace(type="tool_use", id=f"t{len(self.calls)}", name="engine_analysis", input={"lines": 2})
+            return SimpleNamespace(content=[blk], stop_reason="tool_use", usage=usage)
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=self.final)], stop_reason="end_turn", usage=usage)
+
+
+class FakeCoach:
+    def __init__(self): self.seen = []
+    def analyse(self, board, lines=3): self.seen.append(lines); return "1. e2e4 (eval +0.30)"
+    def close(self): self.closed = True
+
+
+def test_coached_llm_uses_tool_then_answers():
+    client, coach = ToolClient(), FakeCoach()
+    p = LLMPlayer(client=client, coach=coach)
+    res = p.choose_move(chess.Board(), MoveContext(1, []))
+    assert res.move.uci() == "e2e4" and coach.seen == [2]
+    assert res.info["tool_calls"] == 1 and res.info["input_tokens"] == 20
+    assert "tools" in client.calls[0] and "engine_analysis" in p.system_prompt
+    last = client.calls[1]["messages"][-1]["content"][0]
+    assert last["type"] == "tool_result" and "e2e4" in last["content"]
+
+
+def test_coach_tool_call_limit_and_engine_errors_do_not_break_the_move():
+    class Boom(FakeCoach):
+        def analyse(self, board, lines=3): raise RuntimeError("engine died")
+    client = ToolClient(tool_rounds=3)
+    p = LLMPlayer(client=client, coach=Boom(), max_tool_calls=2)
+    res = p.choose_move(chess.Board(), MoveContext(1, []))
+    assert res.move.uci() == "e2e4" and res.info["tool_calls"] == 3
+    msgs = client.calls[-1]["messages"]   # the same list object is shared by every call
+    results = [m["content"][0]["content"] for m in msgs if m["role"] == "user" and isinstance(m["content"], list)]
+    assert "engine unavailable" in results[0] and "limit reached" in results[2]
+
+
+def test_engine_coach_formats_lines_with_stub_engine():
+    import chess.engine
+    from aichess.players.coach import EngineCoach
+    b = chess.Board()
+    class Stub:
+        def analyse(self, board, limit, multipv=1):
+            return [{"pv": [chess.Move.from_uci("e2e4"), chess.Move.from_uci("e7e5")], "score": chess.engine.PovScore(chess.engine.Cp(35), chess.WHITE)},
+                    {"pv": [chess.Move.from_uci("d2d4")], "score": chess.engine.PovScore(chess.engine.Mate(3), chess.WHITE)}]
+        def quit(self): pass
+    out = EngineCoach(engine=Stub()).analyse(b, 2)
+    assert "1. e2e4 (eval +0.35) line: e4 e5" in out and "mate in 3" in out

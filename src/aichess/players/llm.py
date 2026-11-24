@@ -85,6 +85,8 @@ class LLMPlayer(Player):
         price_in_per_mtok: Optional[float] = None,
         price_out_per_mtok: Optional[float] = None,
         budget_usd: Optional[float] = None,
+        coach: Any = None,
+        max_tool_calls: int = 4,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -95,6 +97,11 @@ class LLMPlayer(Player):
         self.name = name or model
         self.price_in, self.price_out = price_in_per_mtok, price_out_per_mtok
         self.budget_usd = budget_usd
+        self.coach, self.max_tool_calls = coach, max_tool_calls
+        if coach is not None:
+            self.system_prompt += ("\n\nYou have an `engine_analysis` tool backed by a strong chess engine. "
+                                   "Consult it when a position is tactical or you are unsure; you may call it "
+                                   f"at most {max_tool_calls} times per move. You still make the final choice.")
         self.spent_usd = 0.0
         self.total_tokens = {"input": 0, "output": 0}
         self._client = client
@@ -132,15 +139,45 @@ class LLMPlayer(Player):
 
     def choose_move(self, board: chess.Board, ctx: MoveContext) -> MoveResult:
         self._check_budget()
-        kwargs: dict[str, Any] = dict(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=self.system_prompt,
-            messages=[{"role": "user", "content": build_prompt(board, ctx, self.show_legal_moves)}],
-        )
+        messages: list[dict[str, Any]] = [{"role": "user", "content": build_prompt(board, ctx, self.show_legal_moves)}]
+        kwargs: dict[str, Any] = dict(model=self.model, max_tokens=self.max_tokens, system=self.system_prompt)
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
-        resp = self.client.messages.create(**kwargs)
-        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        if self.coach is not None:
+            from .coach import TOOL_SPEC
+            kwargs["tools"] = [TOOL_SPEC]
+        totals: dict[str, Any] = {"input_tokens": 0, "output_tokens": 0}
+        texts: list[str] = []
+        tool_calls = 0
+        while True:
+            resp = self.client.messages.create(messages=messages, **kwargs)
+            for k, v in self._account(resp).items():
+                totals[k] = round(totals.get(k, 0) + v, 6)
+            texts.append("".join(b.text for b in resp.content if getattr(b, "type", "") == "text"))
+            uses = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
+            if not uses or self.coach is None or getattr(resp, "stop_reason", None) != "tool_use":
+                break
+            messages.append({"role": "assistant", "content": resp.content})
+            results = []
+            for u in uses:
+                tool_calls += 1
+                if tool_calls > self.max_tool_calls:
+                    out = "Tool-call limit reached. Choose your move now."
+                else:
+                    try:
+                        out = self.coach.analyse(board, (u.input or {}).get("lines", 3))
+                    except Exception as exc:  # engine trouble must not lose the game
+                        out = f"engine unavailable: {exc}"
+                results.append({"type": "tool_result", "tool_use_id": u.id, "content": out})
+            messages.append({"role": "user", "content": results})
+            self._check_budget()
+        text = "\n".join(t for t in texts if t)
         move = parse_move(text, board)
-        return MoveResult(move, {"raw_reply": text, **self._account(resp)})
+        info = {"raw_reply": text, **totals}
+        if self.coach is not None:
+            info["tool_calls"] = tool_calls
+        return MoveResult(move, info)
+
+    def close(self) -> None:
+        if self.coach is not None:
+            self.coach.close()
