@@ -186,19 +186,22 @@ Machine-Chess-Arena/
 ├── src/aichess/
 │   ├── players/
 │   │   ├── base.py             # Player interface (choose_move)
-│   │   ├── llm.py              # Claude player: prompt, strict parser, token accounting
+│   │   ├── llm.py              # Claude player: prompt, strict parser, tokens/cost, coach tool loop
+│   │   ├── coach.py · personalities.py  # Stockfish-as-a-tool, playing-style presets
 │   │   ├── stockfish.py        # any UCI engine
 │   │   ├── random_player.py · greedy.py
 │   │   └── factory.py          # PlayerConfig -> Player
 │   ├── match.py                # referee: validation, retries, timeout, clock, openings, resume
 │   ├── events.py               # GameStart / MoveEvent / GameOver + EventBus
-│   ├── observers/              # terminal.py · pgn_writer.py · jsonl_logger.py
+│   ├── observers/              # terminal.py · pgn_writer.py · jsonl_logger.py · commentator.py
 │   ├── runner.py               # build players, wire observers, run one game
 │   ├── tournament.py · elo.py  # round-robin, Elo, leaderboard
+│   ├── openings.py · handicap.py  # opening books/suites, material odds
+│   ├── export.py               # saved games -> fine-tuning JSONL
 │   ├── analysis.py             # centipawn loss / accuracy from a PGN
 │   ├── config.py               # pydantic models + `type:arg,key=val` shorthand
 │   ├── cli.py                  # `aichess` entry point
-│   └── web/                    # server.py (FastAPI + WebSocket) · static/index.html
+│   └── web/                    # server.py (live + REST API) · archive.py · static/{index.html,app.js,app.css}
 ├── tests/                      # pytest suite (no network, no Stockfish required)
 └── games/                      # generated output (gitignored)
 ```
@@ -285,8 +288,20 @@ aichess play --config config.yaml
 # Continue an interrupted/saved game
 aichess play --white greedy --black random --resume games/<run>/game.pgn
 
-# Tournament: round robin, alternating colours, Elo + leaderboard
-aichess tournament --players configs/players.yaml --games 10
+# Tournament: round robin (or --format swiss --rounds 4), colours alternate, Elo + 95% CI
+aichess tournament --players configs/players.yaml --games 10 --openings builtin --seed 1
+
+# Variants and handicaps
+aichess play --white greedy --black random --chess960               # random Fischer Random position
+aichess play --white greedy --black random --odds black:q           # Black starts without its queen
+aichess play --white llm:claude-opus-5-5 --black llm:claude-opus-5-5 --clock-white 600 --clock-black 120
+aichess play --white greedy --black random --opening builtin --seed 3   # book opening
+
+# LLM options (see config.example.yaml): personality, Stockfish-as-a-tool coach, cost tracking, budget
+aichess play --config config.yaml --commentary        # LLM commentator narrates the game
+
+# Turn winning games into fine-tuning data (chat-format JSONL, one example per move)
+aichess export games --out finetune.jsonl
 
 # Replay a saved game in the terminal
 aichess replay games/<run>/game.pgn --delay 0.3
@@ -299,7 +314,16 @@ Each game writes `game.pgn`, `moves.jsonl` and `summary.json` into `games/<times
 
 **Docker:** `docker compose run --rm arena play --white random --black greedy` (image bundles Stockfish).
 
-**Web UI controls:** Play / Pause / Step buttons, a delay slider, move list, the last move's reasoning text (LLM players) and an eval bar (Stockfish players).
+**Web UI** (`--web`; open the printed URL):
+- **Live** tab: Play / Pause / Step and a delay slider; step back through the game while it runs.
+- **Games** tab: every saved game under the output directory; replay with ← → Home End, click a move or the eval graph, flip the board (F), and run Stockfish analysis (accuracy and blunders) on demand.
+- **Tournaments** tab: leaderboard with Elo and 95% intervals, rating plot, head-to-head matrix, and a replay link for every game.
+- Per move: reasoning text, tokens, cost, engine-tool calls and retries; captured pieces, material, clocks, commentary.
+- Links are shareable while the server runs: `#game=<id>`, `#games`, `#tournaments`.
+
+**Handicaps / variants:** `--odds black:q` (material), `--clock-white/--clock-black` (time odds), `--chess960`, `--position N`. All are recorded in the PGN (`Variant`, `Handicap`, `FEN`) and shown in the web UI.
+
+**Costs:** set `price_in_per_mtok` / `price_out_per_mtok` on an LLM player (use your model's current price) to get `cost_usd` per move and in `summary.json`; `budget_usd` makes that player stop (forfeit) once it has spent its allowance.
 
 ---
 
@@ -311,7 +335,8 @@ Each game writes `game.pgn`, `moves.jsonl` and `summary.json` into `games/<times
 | **2 - Engines & LLMs** | StockfishPlayer, LLMPlayer with retry/fallback, JSONL logging, config + CLI | Done |
 | **3 - Experience** | Web UI with live board, reasoning panel, pause/step/speed | Done |
 | **4 - Competition** | Tournament runner, Elo, leaderboard, accuracy analysis via Stockfish | Done |
-| **5 - Polish** | Clocks, random openings, resume-from-PGN, API backoff, Docker | Done (opening *books* and personalities still open) |
+| **5 - Polish** | Clocks, random openings, resume-from-PGN, API backoff, Docker | Done |
+| **6 - Depth** | Opening books/suites, Swiss format, anchored Elo + CIs, personalities, coached LLM, commentator, cost budget, Chess960, handicaps, fine-tuning export, web UI overhaul | Done |
 
 ---
 
@@ -332,13 +357,11 @@ Each game writes `game.pgn`, `moves.jsonl` and `summary.json` into `games/<times
 
 ## 16. Ideas for later
 
-- Opening book / randomised openings so repeated matches differ.
-- LLM "commentator" that narrates the game.
-- Let the LLM call Stockfish as a *tool* (a "coached" LLM) vs a pure LLM — compare ratings.
-- Self-play data collection for fine-tuning.
-- Chess960 (Fischer Random) support.
-- Time-odds handicaps.
-- Spectator mode with shareable replay links.
+- Spectator mode that is reachable beyond localhost (auth, read-only socket).
+- Drag-and-drop "human vs AI" in the web UI.
+- Per-opening statistics and a larger bundled opening suite.
+- Bayesian/Glicko ratings instead of iterated Elo.
+- Reinforcement-style self-play loops on top of the export format.
 
 ---
 
@@ -356,12 +379,16 @@ Each game writes `game.pgn`, `moves.jsonl` and `summary.json` into `games/<times
 
 ## 18. Status
 
-Phases 1-5 are implemented and covered by an offline test suite (`pytest`, 39 tests): referee edge cases (fool's mate, stalemate, repetition, insufficient material, promotion, timeouts, clock, forged-board tampering), LLM prompt/parse/retry logic with a mocked client, a stub UCI engine, Elo, tournaments, analysis, resume/openings, PGN round-trips and the web socket stream.
+Phases 1-6 are implemented and covered by an offline test suite (`pytest`, 78 tests): referee edge cases (fool's mate, stalemate, repetition, insufficient material, promotion, timeouts, clock, forged-board tampering), LLM prompt/parse/retry logic with a mocked client, a stub UCI engine, Elo, tournaments, analysis, resume/openings, PGN round-trips and the web socket stream.
 
 **What has *not* been verified here, so test it on your machine first:**
 - **Real Stockfish** - not installed on the dev machine; the player and `analyze` were tested against a stub engine only.
 - **Real Claude API calls** - tested against a mocked client only (no API key was available). Run one short game with `--max-plies 20` before a long one.
 - **Docker image** - written but never built.
-- **Web UI visuals** - the server/WebSocket flow is tested, the page itself was not opened in a browser.
+- **Web UI** - the live, replay and tournament pages were rendered in headless Chrome against generated games (random/greedy players); not yet tried with real LLM/Stockfish games.
+- **Coached LLM and commentator** - the tool-use loop and commentary are tested with fake clients only; the real API's tool-use responses have not been exercised.
+- **Chess960 with Stockfish** - python-chess sets `UCI_Chess960` automatically, but this was not run against a real engine.
 
-**Still open (see section 16):** opening books, LLM commentator, "coached" LLM with Stockfish as a tool, Chess960, handicaps, fine-tuning data export.
+**Behaviour changes:** `results.json` in a tournament folder is now an object (`format`, `anchors`, `standings`, `games`) instead of a bare list of games. Games that start in the same second with the same players now get a `-2`, `-3`… suffix instead of overwriting each other.
+
+**Still open (see section 16):** see the list above.
