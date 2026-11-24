@@ -9,13 +9,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import GameConfig
 from ..events import GameOver, GameStart, MoveEvent
 from ..runner import run_game
+from . import archive
 
 STATIC = Path(__file__).parent / "static"
 
@@ -116,6 +117,45 @@ def create_app(cfg: GameConfig, autostart: bool = True) -> FastAPI:
     @app.get("/api/state")
     async def api_state() -> dict:
         return {"events": events, "done": state["done"], "error": state["error"]}
+
+    root = Path(cfg.output.dir)
+
+    def _guard(fn, *args):
+        try:
+            return fn(root, *args)
+        except archive.NotFound:
+            raise HTTPException(404, "not found")
+
+    @app.get("/api/info")
+    async def api_info() -> dict:
+        m = cfg.match
+        return {"chess960": m.chess960, "material_odds": m.material_odds, "clock_seconds": m.clock_seconds,
+                "white": cfg.white.model_dump(exclude_none=True), "black": cfg.black.model_dump(exclude_none=True)}
+
+    @app.get("/api/games")
+    async def api_games() -> list:
+        return archive.list_games(root)
+
+    @app.get("/api/games/{game_id:path}/analysis")
+    async def api_analysis(game_id: str) -> dict:
+        try:
+            return await asyncio.to_thread(archive.analyse_saved_game, root, game_id, cfg.white.path or cfg.black.path)
+        except archive.NotFound:
+            raise HTTPException(404, "not found")
+        except FileNotFoundError as exc:
+            raise HTTPException(501, str(exc))
+
+    @app.get("/api/games/{game_id:path}")
+    async def api_game(game_id: str) -> dict:
+        return _guard(archive.load_game, game_id)
+
+    @app.get("/api/tournaments")
+    async def api_tournaments() -> list:
+        return archive.list_tournaments(root)
+
+    @app.get("/api/tournament/{tid:path}")
+    async def api_tournament(tid: str) -> dict:
+        return _guard(archive.load_tournament, tid)
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
