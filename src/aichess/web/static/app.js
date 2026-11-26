@@ -102,7 +102,7 @@ function drawMatchup() {
       won ? h('span', {class: 'winmark', title: 'Winner'}, '✓') : null);
   };
   const centre = res ? ({'1-0': '1 – 0', '0-1': '0 – 1', '1/2-1/2': '½ – ½'}[res] || res) : 'vs';
-  const sub = res ? G.over.reason.replaceAll('_', ' ') : (G.moves.length ? `Move ${Math.ceil(G.view / 2) || 1}` : (G === LIVE ? 'Ready' : ''));
+  const sub = res ? reasonText(G.over.reason) : (G.moves.length ? `Move ${Math.ceil(G.view / 2) || 1}` : (G === LIVE ? 'Ready' : ''));
   el.replaceChildren(half('white'),
     h('div', {class: 'mcentre'}, h('div', {class: 'mscore' + (res ? ' final' : '')}, centre), h('div', {class: 'msub'}, sub)),
     half('black'));
@@ -245,7 +245,7 @@ function setStatus(text, err) {
   const el = $('status'); el.textContent = text; el.className = err ? 'err' : '';
   $('pulse').className = 'pulse' + (err ? ' err' : G === LIVE && G.started && !G.over ? ' on' : '');
 }
-function gameOverText(g = G) { return g.over ? `Game over: ${g.over.result} (${g.over.reason.replaceAll('_', ' ')})` : ''; }
+function gameOverText(g = G) { return g.over ? `Game over: ${g.over.result} (${reasonText(g.over.reason)})` : ''; }
 
 let autoTimer = null;
 function stopAuto() { clearInterval(autoTimer); autoTimer = null; const b = $('b-auto'); if (b) b.textContent = 'Auto'; }
@@ -349,28 +349,45 @@ async function analyse() {
 }
 
 // ---------------------------------------------------------------- tournaments
+const REASONS = {max_plies: 'move limit', insufficient_material: 'insufficient material', fivefold_repetition: 'repetition',
+  threefold_repetition: 'repetition', fifty_moves: '50-move rule', seventyfive_moves: '75-move rule', checkmate: 'checkmate',
+  stalemate: 'stalemate', forfeit: 'forfeit', time: 'out of time'};
+const reasonText = r => REASONS[r] || String(r || '').replaceAll('_', ' ');
+const RESULT = {'1-0': '1 – 0', '0-1': '0 – 1', '1/2-1/2': '½ – ½'};
+const tdate = id => { const m = /(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)/.exec(id); return m ? `${m[1]} · ${m[2]}:${m[3]}` : id; };
+
 async function loadTournaments() {
   const list = await (await fetch('/api/tournaments')).json(), el = $('tlist'); el.replaceChildren();
-  if (!list.length) el.append(h('div', {class: 'muted'}, 'No tournaments found. Run `aichess tournament …` first.'));
+  if (!list.length) el.append(h('div', {class: 'empty'}, 'No tournaments yet. Run “aichess tournament …” first.'));
   for (const t of list) {
-    el.append(h('div', {class: 'titem', onclick: () => openTournament(t.id, el)},
-      h('div', {}, t.id.split('/').pop()),
-      h('div', {class: 'muted'}, `${t.format.replace('_', ' ')} · ${t.players} players · ${t.games} games · 🏆 ${t.winner}`)));
+    el.append(h('div', {class: 'titem', 'data-id': t.id, onclick: () => openTournament(t.id)},
+      h('div', {class: 'tdate'}, tdate(t.id.split('/').pop())),
+      h('div', {class: 'muted'}, `${t.format.replace('_', ' ')} · ${t.players} players · ${t.games} games`),
+      h('div', {class: 'twin'}, '♛ ' + t.winner)));
   }
   if (list.length) openTournament(list[0].id);
 }
 
 function eloPlot(standings) {
   const vals = standings.flatMap(x => [x.elo, x.elo_lo ?? x.elo, x.elo_hi ?? x.elo]);
-  const lo = Math.min(...vals) - 30, hi = Math.max(...vals) + 30, W = 600, rowH = 26, H = rowH * standings.length + 24;
-  const X = v => 150 + ((v - lo) / Math.max(1, hi - lo)) * (W - 170);
-  const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, class: 'eloplot'});
+  const step = (Math.max(...vals) - Math.min(...vals)) > 400 ? 100 : 50;
+  const lo = Math.floor((Math.min(...vals) - 20) / step) * step, hi = Math.ceil((Math.max(...vals) + 20) / step) * step;
+  const W = 860, L = 160, R = 40, rowH = 34, H = rowH * standings.length + 30;
+  const X = v => L + ((v - lo) / Math.max(1, hi - lo)) * (W - L - R);
+  const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, class: 'eloplot', role: 'img', 'aria-label': 'Rating estimates'});
+  for (let v = lo; v <= hi; v += step) {
+    svg.append(s('line', {x1: X(v), x2: X(v), y1: 4, y2: H - 22, class: 'grid'}));
+    svg.append(s('text', {x: X(v), y: H - 6, class: 'tick', 'text-anchor': 'middle'}, String(v)));
+  }
   standings.forEach((x, i) => {
-    const y = 14 + i * rowH;
-    svg.append(s('text', {x: 0, y: y + 4, fill: 'currentColor', 'font-size': 12}, x.name.slice(0, 22)));
-    if (x.elo_lo != null) svg.append(s('line', {x1: X(x.elo_lo), x2: X(x.elo_hi), y1: y, y2: y, stroke: 'currentColor', 'stroke-opacity': .4, 'stroke-width': 2}));
-    svg.append(s('circle', {cx: X(x.elo), cy: y, r: 5, fill: 'currentColor'}));
-    svg.append(s('text', {x: X(x.elo) + 9, y: y - 7, fill: 'currentColor', 'font-size': 10}, Math.round(x.elo)));
+    const y = 20 + i * rowH, cx = X(x.elo);
+    svg.append(s('text', {x: 0, y: y + 4, class: 'pl'}, x.name.length > 22 ? x.name.slice(0, 21) + '…' : x.name));
+    if (x.elo_lo != null) {
+      svg.append(s('line', {x1: X(x.elo_lo), x2: X(x.elo_hi), y1: y, y2: y, class: 'ci'}));
+      for (const e of [x.elo_lo, x.elo_hi]) svg.append(s('line', {x1: X(e), x2: X(e), y1: y - 4, y2: y + 4, class: 'ci'}));
+    }
+    svg.append(s('polygon', {points: `${cx},${y - 7} ${cx + 7},${y} ${cx},${y + 7} ${cx - 7},${y}`, class: 'pt' + (i === 0 ? ' top' : '')}));
+    svg.append(s('text', {x: cx, y: y - 12, class: 'val', 'text-anchor': 'middle'}, String(Math.round(x.elo))));
   });
   return svg;
 }
@@ -383,33 +400,41 @@ function crossTable(t) {
       const c = (cell[a + '\u0000' + b] ||= {pts: 0, n: 0}); c.pts += p; c.n++;
     }
   }
-  return h('table', {}, h('tr', {}, h('th', {}, ''), h('th', {}, ''), names.map((_, i) => h('th', {}, String(i + 1)))),
-    names.map((a, i) => h('tr', {}, h('td', {}, String(i + 1)), h('td', {}, a), names.map(b => {
-      const c = cell[a + '\u0000' + b];
-      if (a === b || !c) return h('td', {}, a === b ? '·' : '');
+  const fmt = n => n === .5 ? '½' : Number.isInteger(n) ? String(n) : String(Math.floor(n)).replace(/^0$/, '') + '½';
+  return h('table', {class: 'cross'}, h('tr', {}, h('th', {}, ''), names.map((_, i) => h('th', {}, String(i + 1)))),
+    names.map((a, i) => h('tr', {}, h('th', {class: 'rowh'}, h('span', {class: 'rk'}, String(i + 1)), a), names.map(b => {
+      if (a === b) return h('td', {class: 'self'});
+      const c = cell[a + '\u0000' + b]; if (!c) return h('td', {}, '');
       const f = c.pts / c.n;
-      return h('td', {class: f > .5 ? 'win' : f < .5 ? 'loss' : 'draw', title: `${c.pts}/${c.n}`}, `${c.pts}/${c.n}`);
+      return h('td', {class: f > .5 ? 'win' : f < .5 ? 'loss' : 'draw', title: `${a} scored ${c.pts} of ${c.n} against ${b}`}, `${fmt(c.pts)} / ${c.n}`);
     }))));
 }
 
 async function openTournament(id) {
   const t = await (await fetch('/api/tournament/' + id.split('/').map(encodeURIComponent).join('/'))).json();
-  document.querySelectorAll('.titem').forEach(e => e.classList.toggle('sel', e.firstChild.textContent === id.split('/').pop()));
-  const rows = t.standings.map((x, i) => h('tr', {},
-    h('td', {}, String(i + 1)), h('td', {}, x.name + (t.anchors && x.name in t.anchors ? ' *' : '')),
-    h('td', {}, Math.round(x.elo) + (x.elo_lo != null ? ` (${Math.round(x.elo_lo)}–${Math.round(x.elo_hi)})` : '')),
+  document.querySelectorAll('.titem').forEach(e => e.classList.toggle('sel', e.dataset.id === id));
+  const decisive = t.games.filter(g => g.result !== '1/2-1/2').length;
+  const stat = (k, v) => h('div', {class: 'stat'}, h('div', {class: 'sv'}, v), h('div', {class: 'sk'}, k));
+  const top = t.standings[0];
+  const rows = t.standings.map((x, i) => h('tr', {class: i === 0 ? 'first' : ''},
+    h('td', {}, String(i + 1)), h('td', {class: 'nm'}, (i === 0 ? '♛ ' : '') + x.name + (t.anchors && x.name in t.anchors ? ' *' : '')),
+    h('td', {}, h('b', {}, String(Math.round(x.elo))), x.elo_lo != null ? h('span', {class: 'ci'}, ` ${Math.round(x.elo_lo)}–${Math.round(x.elo_hi)}`) : null),
     h('td', {}, String(x.points)), h('td', {}, String(x.games)), h('td', {}, String(x.wins)), h('td', {}, String(x.draws)), h('td', {}, String(x.losses))));
-  const games = t.games.map((g, i) => h('tr', {},
-    h('td', {}, String(g.round || 1)), h('td', {}, g.white), h('td', {}, g.black), h('td', {}, g.result),
-    h('td', {}, g.reason.replaceAll('_', ' ')), h('td', {}, g.game_id ? h('span', {class: 'glink', onclick: () => openGame(g.game_id)}, 'replay') : '')));
+  const games = t.games.map(g => h('tr', {},
+    h('td', {}, String(g.round || 1)), h('td', {class: 'nm'}, g.white), h('td', {class: 'nm'}, g.black),
+    h('td', {class: 'res'}, RESULT[g.result] || g.result), h('td', {class: 'muted'}, reasonText(g.reason)),
+    h('td', {}, g.game_id ? h('span', {class: 'glink', onclick: () => openGame(g.game_id)}, 'Replay →') : '')));
   $('tdetail').replaceChildren(
-    h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, `Leaderboard · ${t.format.replace('_', ' ')}`),
-      h('table', {}, h('tr', {}, ['#', 'Player', 'Elo (95% CI)', 'Pts', 'G', 'W', 'D', 'L'].map(x => h('th', {}, x))), rows),
-      t.anchors && Object.keys(t.anchors).length ? h('div', {class: 'muted'}, '* anchored rating (known strength)') : null),
-    h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, 'Rating estimates'), eloPlot(t.standings)),
-    h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, 'Head to head (row’s points / games)'), crossTable(t)),
+    h('div', {class: 'stats'}, stat('Winner', top ? top.name : '—'), stat('Format', t.format.replace('_', ' ')),
+      stat('Players', String(t.standings.length)), stat('Games', String(t.games.length)),
+      stat('Decisive', t.games.length ? Math.round(100 * decisive / t.games.length) + '%' : '—')),
+    h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, 'Leaderboard'),
+      h('table', {class: 'lb'}, h('tr', {}, ['#', 'Player', 'Elo · 95% range', 'Pts', 'G', 'W', 'D', 'L'].map(x => h('th', {}, x))), rows),
+      t.anchors && Object.keys(t.anchors).length ? h('div', {class: 'muted note'}, '* rating anchored to a known strength') : null),
+    h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, 'Rating estimates · diamond = estimate, bar = 95% range'), eloPlot(t.standings)),
+    h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, 'Head to head · row’s points / games'), h('div', {class: 'scroll'}, crossTable(t))),
     h('div', {class: 'card'}, h('div', {class: 'cardtitle'}, 'Games'),
-      h('table', {class: 'txt'}, h('tr', {}, ['Rd', 'White', 'Black', 'Result', 'Reason', ''].map(x => h('th', {}, x))), games)));
+      h('table', {class: 'txt gl'}, h('tr', {}, ['Rd', 'White', 'Black', 'Result', 'Ended by', ''].map(x => h('th', {}, x))), games)));
 }
 
 // ---------------------------------------------------------------- tabs, controls, keyboard
