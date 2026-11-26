@@ -20,6 +20,7 @@
 
 <!-- one game viewer, shared by the Live and Games tabs -->
 <main id="view-game">
+  <section id="matchup" class="matchup" aria-label="Matchup"></section>
   <aside id="picker" class="card hidden">
     <input id="filter" type="search" placeholder="Filter games…">
     <div id="gamelist"></div>
@@ -33,17 +34,19 @@
     </div>
     <div class="player" id="bottom-player"></div>
     <div class="nav">
-      <button id="b-first" title="Start (Home)">⏮</button>
-      <button id="b-prev" title="Back (←)">◀</button>
-      <button id="b-next" title="Forward (→)">▶</button>
-      <button id="b-last" title="Latest (End)">⏭</button>
-      <button id="b-flip" class="secondary" title="Flip board (F)">⇅ Flip</button>
+      <button id="b-first" class="secondary" title="Start (Home)" aria-label="Start">«</button>
+      <button id="b-prev" class="secondary" title="Back (←)" aria-label="Back">‹</button>
+      <button id="b-next" class="secondary" title="Forward (→)" aria-label="Forward">›</button>
+      <button id="b-last" class="secondary" title="Latest (End)" aria-label="Latest">»</button>
+      <button id="b-auto" class="secondary hidden" title="Auto-play replay (Space)">Auto</button>
+      <button id="b-flip" class="secondary" title="Flip board (F)">Flip</button>
     </div>
+    <div class="hint">← → step &nbsp;·&nbsp; Home / End jump &nbsp;·&nbsp; F flip &nbsp;·&nbsp; Space auto-play</div>
   </section>
 
   <section class="side">
     <div class="card" id="statuscard">
-      <div id="status">Connecting…</div>
+      <div class="statusrow"><span id="pulse" class="pulse"></span><div id="status">Connecting…</div></div>
       <div class="controls" id="livecontrols">
         <button id="play">Play</button>
         <button id="pause" class="secondary">Pause</button>

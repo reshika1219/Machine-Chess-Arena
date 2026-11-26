@@ -5,6 +5,7 @@ const GLYPH = {K:'♚', Q:'♛', R:'♜', B:'♝', N:'♞', P:'♟'};
 const VALUE = {P:1, N:3, B:3, R:5, Q:9, K:0};
 const START_COUNT = {P:8, N:2, B:2, R:2, Q:1};
 const STD_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+let INFO = null;   // /api/info: the configured players (live tab)
 const $ = id => document.getElementById(id);
 
 function h(tag, attrs, ...kids) {
@@ -61,6 +62,52 @@ function counts(fen) {
 }
 const material = c => Object.entries(c).reduce((a, [k, n]) => a + VALUE[k] * n, 0);
 
+// ---------------------------------------------------------------- who is playing
+const prettyModel = m => {
+  const x = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(m || '');
+  return x ? `Claude ${x[1][0].toUpperCase() + x[1].slice(1)} ${x[2]}.${x[3]}` : (m || 'LLM');
+};
+// Works from a saved-game name alone (replays) or, on the live tab, from the full player config.
+function describe(raw, cfg) {
+  const name = raw || '';
+  const type = cfg ? cfg.type : /^stockfish/.test(name) ? 'stockfish' : name === 'random' ? 'random' : name === 'greedy' ? 'greedy' : 'llm';
+  const coach = cfg ? cfg.coach : /\+coach$/.test(name);
+  if (type === 'stockfish') {
+    const lvl = cfg ? cfg.skill_level : (/lvl(\d+)/.exec(name) || [])[1], elo = cfg ? cfg.elo : (/elo(\d+)/.exec(name) || [])[1];
+    return {kind: 'Engine', title: 'Stockfish', detail: elo ? `Elo ${elo}` : lvl != null ? `Skill level ${lvl} / 20` : 'Full strength'};
+  }
+  if (type === 'random') return {kind: 'Baseline', title: 'Random', detail: 'Any legal move'};
+  if (type === 'greedy') return {kind: 'Baseline', title: 'Greedy', detail: 'Takes the best capture'};
+  const model = cfg ? cfg.model : name.replace(/\+coach$/, '');
+  const bits = [cfg && cfg.personality, coach ? 'Stockfish coach' : null].filter(Boolean);
+  return {kind: 'LLM', title: (cfg && cfg.name) || prettyModel(model), detail: bits.length ? bits.join(' · ') : 'Language model'};
+}
+const sideInfo = side => {
+  const raw = G[side], cfg = G === LIVE && INFO ? INFO[side] : null;
+  return describe(raw === 'White' || raw === 'Black' ? '' : raw, cfg);
+};
+
+function drawMatchup() {
+  const el = $('matchup'), res = G.over && G.over.result;
+  const turn = G.view < G.moves.length || !G.over ? fenAt(G.view).split(' ')[1] : null;
+  const half = side => {
+    const i = sideInfo(side), mine = side === 'white' ? 'w' : 'b';
+    const won = res === (side === 'white' ? '1-0' : '0-1'), lost = res === (side === 'white' ? '0-1' : '1-0');
+    const live = !res && turn === mine && (G !== LIVE || G.moves.length > 0 || G.started);
+    return h('div', {class: `mside ${side}${won ? ' won' : ''}${lost ? ' lost' : ''}${live ? ' turn' : ''}`},
+      h('span', {class: `dot ${mine}`}),
+      h('div', {class: 'minfo'},
+        h('div', {class: 'mtitle'}, i.title),
+        h('div', {class: 'mdetail'}, h('span', {class: 'kind'}, i.kind), i.detail)),
+      won ? h('span', {class: 'winmark', title: 'Winner'}, '✓') : null);
+  };
+  const centre = res ? ({'1-0': '1 – 0', '0-1': '0 – 1', '1/2-1/2': '½ – ½'}[res] || res) : 'vs';
+  const sub = res ? G.over.reason.replaceAll('_', ' ') : (G.moves.length ? `Move ${Math.ceil(G.view / 2) || 1}` : (G === LIVE ? 'Ready' : ''));
+  el.replaceChildren(half('white'),
+    h('div', {class: 'mcentre'}, h('div', {class: 'mscore' + (res ? ' final' : '')}, centre), h('div', {class: 'msub'}, sub)),
+    half('black'));
+}
+
 // ---------------------------------------------------------------- rendering
 function evalAt(ply) {
   if (G.evals && G.evals[ply] !== undefined) return G.evals[ply];
@@ -114,7 +161,7 @@ function playerBar(el, side) {
   const toMove = fen.split(' ')[1] === (side === 'white' ? 'w' : 'b') && !G.over;
   el.replaceChildren(...[
     h('span', {class: `dot ${mine}`}),
-    h('span', {class: 'pname'}, G[side]),
+    h('span', {class: 'pname'}, sideInfo(side).title),
     h('span', {class: 'caps'}, caps, diff > 0 ? h('span', {class: 'adv'}, `+${diff}`) : null),
     clock != null ? h('span', {class: 'clock' + (clock < 30 ? ' low' : ''), title: toMove ? 'to move' : ''},
       (toMove ? '▸ ' : '') + fmtClock(clock)) : null].filter(Boolean));
@@ -186,14 +233,25 @@ function render() {
   const top = G.flipped ? 'white' : 'black';
   playerBar($('top-player'), top);
   playerBar($('bottom-player'), top === 'black' ? 'white' : 'black');
-  drawEval(); drawGraph(); drawMoves(); drawDetail(); drawCommentary();
+  drawMatchup(); drawEval(); drawGraph(); drawMoves(); drawDetail(); drawCommentary();
   $('b-first').disabled = $('b-prev').disabled = G.view === 0;
   $('b-next').disabled = $('b-last').disabled = G.view >= G.moves.length;
 }
 
-function setStatus(text, err) { const el = $('status'); el.textContent = text; el.className = err ? 'err' : ''; }
+function setStatus(text, err) {
+  const el = $('status'); el.textContent = text; el.className = err ? 'err' : '';
+  $('pulse').className = 'pulse' + (err ? ' err' : G === LIVE && G.started && !G.over ? ' on' : '');
+}
 function gameOverText(g = G) { return g.over ? `Game over: ${g.over.result} (${g.over.reason.replaceAll('_', ' ')})` : ''; }
 
+let autoTimer = null;
+function stopAuto() { clearInterval(autoTimer); autoTimer = null; const b = $('b-auto'); if (b) b.textContent = 'Auto'; }
+function toggleAuto() {
+  if (autoTimer) return stopAuto();
+  if (G.view >= G.moves.length) goto(0);
+  $('b-auto').textContent = 'Pause';
+  autoTimer = setInterval(() => { if (G.view >= G.moves.length) stopAuto(); else goto(G.view + 1); }, 800);
+}
 function goto(ply) {
   G.view = Math.max(0, Math.min(G.moves.length, ply));
   render();
@@ -207,7 +265,7 @@ function handleEvent(ev) {
   let msg = null, err = false;
   if (ev.type === 'GameStart') {
     // opening / resumed moves are already on the board: the viewer starts from the position after them
-    resetGame(L, {startFen: ev.fen_now || ev.fen, white: ev.white, black: ev.black, handicap: ev.handicap || '',
+    resetGame(L, {started: true, startFen: ev.fen_now || ev.fen, white: ev.white, black: ev.black, handicap: ev.handicap || '',
       chess960: !!ev.chess960, clocks: ev.clock_seconds || {white: null, black: null}});
     const n = (ev.prior_moves || []).length;
     msg = n ? `Ready (${n} opening plies already played) — press Play` : 'Ready — press Play';
@@ -219,7 +277,7 @@ function handleEvent(ev) {
   } else if (ev.type === 'Commentary') {
     L.comments.push(ev);
   } else if (ev.type === 'GameOver') {
-    L.over = ev; msg = gameOverText(L);
+    L.over = ev; msg = gameOverText(L); stopAuto();
   } else if (ev.type === 'Error') {
     msg = 'Error: ' + ev.message; err = true;
   }
@@ -352,7 +410,9 @@ async function openTournament(id) {
 
 // ---------------------------------------------------------------- tabs, controls, keyboard
 function showTab(name, keepGame) {
-  tab = name;
+  tab = name; stopAuto();
+  $('b-auto').classList.toggle('hidden', name !== 'games');
+  $('matchup').classList.toggle('hidden', name === 'tournaments');
   if (!keepGame) history.replaceState(null, '', name === 'live' ? location.pathname : '#' + name);
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $('view-game').classList.toggle('hidden', name === 'tournaments');
@@ -373,6 +433,7 @@ $('b-first').onclick = () => goto(0);
 $('b-prev').onclick = () => goto(G.view - 1);
 $('b-next').onclick = () => goto(G.view + 1);
 $('b-last').onclick = () => goto(G.moves.length);
+$('b-auto').onclick = toggleAuto;
 $('b-flip').onclick = () => { G.flipped = !G.flipped; render(); };
 $('play').onclick = () => send('play');
 $('pause').onclick = () => send('pause');
@@ -387,12 +448,13 @@ $('graph').onclick = e => {
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || tab === 'tournaments') return;
   const k = {ArrowLeft: () => goto(G.view - 1), ArrowRight: () => goto(G.view + 1), Home: () => goto(0),
-    End: () => goto(G.moves.length), f: () => { G.flipped = !G.flipped; render(); }}[e.key];
+    End: () => goto(G.moves.length), ' ': () => tab === 'games' && toggleAuto(), f: () => { G.flipped = !G.flipped; render(); }}[e.key];
   if (k) { e.preventDefault(); k(); }
 });
 
 // live tab keeps its own game state; replays use the shared viewer, so snapshot/restore around tab switches
 fetch('/api/info').then(r => r.json()).then(i => {
+  INFO = i; render();
   if (!LIVE.moves.length) {
     LIVE.chess960 = i.chess960; if (i.material_odds) LIVE.handicap = 'material odds ' + i.material_odds;
     if (G === LIVE) badges();
