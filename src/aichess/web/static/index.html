@@ -48,20 +48,22 @@
     <div class="card" id="statuscard">
       <div class="statusrow"><span id="pulse" class="pulse"></span><div id="status">Connecting…</div></div>
       <div class="controls" id="livecontrols">
-        <button id="play">Play</button>
-        <button id="pause" class="secondary">Pause</button>
-        <button id="step" class="secondary">Step</button>
-        <label>Delay <span id="dv">1.0</span>s <input id="speed" type="range" min="0" max="5" step="0.25" value="1"></label>
+        <div class="btns">
+          <button id="play">Play</button>
+          <button id="pause" class="secondary">Pause</button>
+          <button id="step" class="secondary">Step</button>
+        </div>
+        <label class="delay"><span class="dlabel">Delay</span><input id="speed" type="range" min="0" max="5" step="0.25" value="1"><span class="dval"><span id="dv">1.0</span>s</span></label>
       </div>
       <div class="controls hidden" id="replaycontrols">
         <button id="analyse" class="secondary">Analyse with Stockfish</button>
         <span id="analysenote" class="muted"></span>
       </div>
     </div>
-    <div class="card"><div class="cardtitle">Evaluation</div><svg id="graph" viewBox="0 0 300 70" preserveAspectRatio="none"></svg><div id="graphnote" class="muted"></div></div>
+    <div class="card"><div class="cardtitle">Evaluation</div><svg id="graph" viewBox="0 0 300 70" preserveAspectRatio="none"></svg><div id="graphnote" class="empty"></div></div>
     <div class="card"><div class="cardtitle">Moves</div><div id="moves"></div></div>
-    <div class="card"><div class="cardtitle">Move details</div><div id="detail" class="muted">Select a move.</div></div>
-    <div class="card"><div class="cardtitle">Commentary</div><div id="commentary" class="muted">—</div></div>
+    <div class="card"><div class="cardtitle">Move details</div><div id="detail"><div class="empty">Select a move to see its reasoning.</div></div></div>
+    <div class="card"><div class="cardtitle">Commentary</div><div id="commentary"><div class="empty">No commentary.</div></div></div>
   </section>
 </main>
 

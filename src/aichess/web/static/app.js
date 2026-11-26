@@ -177,7 +177,9 @@ function drawGraph() {
   const g = $('graph'); g.replaceChildren();
   const n = G.moves.length, pts = [];
   for (let i = 0; i <= n; i++) { const e = evalAt(i); if (e !== null) pts.push([i, e]); }
-  $('graphnote').textContent = pts.length < 2 ? 'No evaluations yet (Stockfish players report them live; use “Analyse” on saved games).' : '';
+  $('graphnote').textContent = pts.length < 2 ? 'Evaluations appear once a Stockfish player moves, or after “Analyse”.' : '';
+  g.classList.toggle('hidden', pts.length < 2); $('graphnote').classList.toggle('hidden', pts.length >= 2);
+  if (pts.length < 2) return;
   g.append(s('line', {x1: 0, x2: 300, y1: 35, y2: 35, stroke: 'currentColor', 'stroke-opacity': .25, 'stroke-width': .5}));
   if (pts.length >= 2) {
     const X = i => (i / Math.max(1, n)) * 300, Y = e => 35 - Math.max(-1, Math.min(1, Math.tanh(e / 500))) * 33;
@@ -191,6 +193,7 @@ function drawGraph() {
 
 function drawMoves() {
   const el = $('moves'); el.replaceChildren();
+  if (!G.moves.length) { el.append(h('div', {class: 'empty'}, 'No moves yet.')); return; }
   G.moves.forEach((m, i) => {
     if (i % 2 === 0) el.append(h('span', {class: 'n'}, `${i / 2 + 1}.`));
     const cls = ['mv'];
@@ -206,7 +209,7 @@ function drawMoves() {
 function drawDetail() {
   const el = $('detail'); el.replaceChildren();
   const m = G.view > 0 ? G.moves[G.view - 1] : null;
-  if (!m) { el.append('Select a move.'); return; }
+  if (!m) { el.append(h('div', {class: 'empty'}, 'Select a move to see its reasoning.')); return; }
   const i = m.info || {}, kv = [];
   const add = (k, v) => v != null && v !== '' && kv.push(h('span', {}, `${k} `, h('b', {}, String(v))));
   add('Player', m.player || G[m.side]);
@@ -223,7 +226,7 @@ function drawDetail() {
 function drawCommentary() {
   const el = $('commentary'); el.replaceChildren();
   const shown = G.comments.filter(c => c.ply <= G.view || c.kind === 'summary' && G.over && G.view >= G.moves.length);
-  if (!shown.length) { el.append('—'); return; }
+  if (!shown.length) { el.append(h('div', {class: 'empty'}, 'No commentary.')); return; }
   for (const c of shown) el.append(h('div', {class: 'cm'}, h('span', {class: 'ply'}, c.kind === 'summary' ? 'final' : `ply ${c.ply}`), c.text));
   el.scrollTop = el.scrollHeight;
 }
@@ -288,6 +291,7 @@ function handleEvent(ev) {
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => { if (!LIVE.status) { LIVE.status = 'Connected — press Play to start'; if (G === LIVE) setStatus(LIVE.status); } };
   ws.onmessage = e => handleEvent(JSON.parse(e.data));
   ws.onclose = () => { LIVE.status = 'Disconnected from server'; LIVE.statusErr = true; if (G === LIVE && !LIVE.over) setStatus(LIVE.status, true); };
 }
