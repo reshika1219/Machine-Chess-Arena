@@ -135,11 +135,11 @@ function drawGraph() {
   if (pts.length >= 2) {
     const X = i => (i / Math.max(1, n)) * 300, Y = e => 35 - Math.max(-1, Math.min(1, Math.tanh(e / 500))) * 33;
     const line = pts.map(([i, e]) => `${X(i).toFixed(1)},${Y(e).toFixed(1)}`).join(' ');
-    g.append(s('polygon', {points: `${X(pts[0][0])},35 ${line} ${X(pts[pts.length - 1][0])},35`, fill: '#4f8cff', 'fill-opacity': .25}));
-    g.append(s('polyline', {points: line, fill: 'none', stroke: '#4f8cff', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke'}));
+    g.append(s('polygon', {points: `${X(pts[0][0])},35 ${line} ${X(pts[pts.length - 1][0])},35`, fill: 'currentColor', 'fill-opacity': .12}));
+    g.append(s('polyline', {points: line, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke'}));
   }
   g.append(s('line', {x1: (G.view / Math.max(1, n)) * 300, x2: (G.view / Math.max(1, n)) * 300, y1: 0, y2: 70,
-    stroke: '#ff6b6b', 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke'}));
+    stroke: '#a63d32', 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke'}));
 }
 
 function drawMoves() {
@@ -306,8 +306,8 @@ function eloPlot(standings) {
   standings.forEach((x, i) => {
     const y = 14 + i * rowH;
     svg.append(s('text', {x: 0, y: y + 4, fill: 'currentColor', 'font-size': 12}, x.name.slice(0, 22)));
-    if (x.elo_lo != null) svg.append(s('line', {x1: X(x.elo_lo), x2: X(x.elo_hi), y1: y, y2: y, stroke: '#8f98a8', 'stroke-width': 2}));
-    svg.append(s('circle', {cx: X(x.elo), cy: y, r: 5, fill: '#4f8cff'}));
+    if (x.elo_lo != null) svg.append(s('line', {x1: X(x.elo_lo), x2: X(x.elo_hi), y1: y, y2: y, stroke: 'currentColor', 'stroke-opacity': .4, 'stroke-width': 2}));
+    svg.append(s('circle', {cx: X(x.elo), cy: y, r: 5, fill: 'currentColor'}));
     svg.append(s('text', {x: X(x.elo) + 9, y: y - 7, fill: 'currentColor', 'font-size': 10}, Math.round(x.elo)));
   });
   return svg;
@@ -358,6 +358,7 @@ function showTab(name, keepGame) {
   $('view-game').classList.toggle('hidden', name === 'tournaments');
   $('view-tournaments').classList.toggle('hidden', name !== 'tournaments');
   $('picker').classList.toggle('hidden', name !== 'games');
+  $('view-game').classList.toggle('withpicker', name === 'games');
   $('livecontrols').classList.toggle('hidden', name !== 'live');
   $('replaycontrols').classList.toggle('hidden', name !== 'games');
   if (name === 'tournaments') { loadTournaments(); return; }
